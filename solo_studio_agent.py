@@ -140,6 +140,12 @@ DEFAULT_CONFIG = {
     # Behavior.
     "autopilot_enabled": False,   # background processing of replies/payments
     "poll_interval_seconds": 120,
+    # Phone access (dashboard reachable from your phone on the same Wi-Fi).
+    "phone_access_enabled": False,
+    "phone_pin": "",
+    # Push notifications to your phone via the free ntfy.sh service.
+    "ntfy_enabled": False,
+    "ntfy_topic": "",
 }
 
 
@@ -677,6 +683,28 @@ class Services:
                 return intent
         return "unclear"
 
+    # -- phone push notifications (ntfy.sh) --------------------------------
+
+    def push_notify(self, title: str, message: str, priority: str = "default",
+                    tags: str = "") -> None:
+        """Send a push notification to the user's phone via ntfy.sh.
+        The topic name acts as the secret — nothing sensitive is included
+        beyond lead name + event. Raises ServiceError on failure so the
+        Setup test button can report it; pipeline callers swallow errors."""
+        if not self.config.get("ntfy_enabled"):
+            return
+        topic = (self.config.get("ntfy_topic") or "").strip()
+        if not topic:
+            raise ServiceError("Notifications are enabled but no topic is set.")
+        headers = {"Title": title, "Priority": priority}
+        if tags:
+            headers["Tags"] = tags
+        resp = requests.post(f"https://ntfy.sh/{topic}",
+                             data=message.encode("utf-8"),
+                             headers=headers, timeout=10)
+        if resp.status_code != 200:
+            raise ServiceError(f"ntfy.sh error {resp.status_code}: {resp.text[:200]}")
+
     # -- Netlify -----------------------------------------------------------
 
     def _netlify_headers(self) -> dict:
@@ -835,6 +863,17 @@ class Agent:
         self.services = services
         self.config = config
 
+    def _notify(self, title: str, message: str, priority: str = "default",
+                tags: str = "") -> None:
+        """Best-effort phone push; never breaks the pipeline."""
+        fn = getattr(self.services, "push_notify", None)
+        if fn is None:
+            return
+        try:
+            fn(title, message, priority=priority, tags=tags)
+        except Exception:
+            pass
+
     # -- lead discovery ----------------------------------------------------
 
     def find_leads(self, query: str) -> dict:
@@ -910,6 +949,9 @@ class Agent:
                         f"Email from {msg['from_address']} ({msg['subject'][:80]!r}) "
                         "doesn't match any lead — handle manually in your inbox.",
                         needs_attention=True)
+                    self._notify("Email needs you",
+                                 f"From {msg['from_address']}: {msg['subject'][:100]}",
+                                 tags="warning")
                 continue
             if lead["stage"] in TRANSIENT_STAGES:
                 # A step for this lead is mid-flight; leave the message for the
@@ -936,6 +978,8 @@ class Agent:
         stage = lead["stage"]
         self.db.log(lead_id, "reply_received",
                     f"Reply from {msg['from_address']}: {msg['snippet'][:120]}")
+        self._notify(f"Reply from {lead['name']}", msg["snippet"][:160] or "(no preview)",
+                     tags="email")
         try:
             body = self.services.email_fetch_body(msg["message_uuid"]) or msg["snippet"]
         except Exception:
@@ -971,6 +1015,9 @@ class Agent:
             self.db.log(lead_id, "reply_unclear",
                         "Reply needs a human answer (question/change request?). "
                         "Reply from your own inbox.", needs_attention=True)
+            self._notify(f"{lead['name']} asked something",
+                         "Their reply needs a human answer — check your inbox.",
+                         tags="warning")
             return
 
         # intent == interested
@@ -1030,6 +1077,9 @@ class Agent:
                                 attempts=0)
             self.db.claim(lead_id, [STAGE_BUILDING_PREVIEW], STAGE_PREVIEW_SENT)
             self.db.log(lead_id, "preview_emailed", "Preview link emailed to lead.")
+            self._notify(f"Preview sent — {lead['name']}",
+                         f"Watermarked preview is live: {lead['netlify_url']}",
+                         tags="art")
         except Exception as e:
             attempts = self.db.bump_attempts(lead_id)
             self.db.update_lead(lead_id, error=str(e)[:500])
@@ -1082,6 +1132,9 @@ class Agent:
                                 error=None, attempts=0)
             self.db.claim(lead_id, [STAGE_SENDING_PAYMENT_LINK], STAGE_PAYMENT_LINK_SENT)
             self.db.log(lead_id, "payment_link_emailed", "Payment link emailed.")
+            self._notify(f"Payment link sent — {lead['name']}",
+                         f"${fmt_price(self.config.get('site_price_usd', 500))} "
+                         "checkout link is in their inbox.", tags="link")
         except Exception as e:
             attempts = self.db.bump_attempts(lead_id)
             self.db.update_lead(lead_id, error=str(e)[:500])
@@ -1179,6 +1232,10 @@ class Agent:
                     self.db.update_lead(lead["id"], paid_at=_now(), attempts=0)
                     self.db.log(lead["id"], "payment_confirmed",
                                 "Stripe confirmed payment. Deploying final site.")
+                    amount = fmt_price((lead["amount_cents"] or 0) / 100)
+                    self._notify(f"{lead['name']} PAID ${amount}",
+                                 "Stripe confirmed the payment — deploying their "
+                                 "final site now.", priority="high", tags="moneybag")
                     paid += 1
             elif session["status"] == "expired":
                 self.db.log(lead["id"], "checkout_expired",
@@ -1232,6 +1289,8 @@ class Agent:
                                 delivered_at=_now(), error=None, attempts=0)
             self.db.claim(lead_id, [STAGE_DEPLOYING_FINAL], STAGE_DELIVERED)
             self.db.log(lead_id, "delivered", f"Final site delivered: {deployed['url']}")
+            self._notify(f"Site delivered — {lead['name']}",
+                         f"Watermark off, live at {deployed['url']}", tags="tada")
         except Exception as e:
             attempts = self.db.bump_attempts(lead_id)
             self.db.update_lead(lead_id, error=str(e)[:500])

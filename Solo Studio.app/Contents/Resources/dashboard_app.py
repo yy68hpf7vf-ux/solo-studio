@@ -9,14 +9,17 @@ editing, no environment variables. The dashboard binds to 127.0.0.1 only.
 from __future__ import annotations
 
 import argparse
+import base64
+import hmac
 import os
+import secrets
 import socket
 import threading
 import time
 import webbrowser
 
 from flask import (Flask, abort, flash, redirect, render_template_string,
-                   request, url_for)
+                   request, session, url_for)
 
 import solo_studio_agent as core
 
@@ -45,6 +48,47 @@ STATE = State()
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.json.sort_keys = False  # keep pipeline-stage order in /jarvis/data
+
+ICON_192 = base64.b64decode("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")
+ICON_512 = base64.b64decode("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")
+
+PWA_META = (
+    '<link rel="manifest" href="/manifest.webmanifest">'
+    '<link rel="apple-touch-icon" href="/icon-192.png">'
+    '<meta name="apple-mobile-web-app-capable" content="yes">'
+    '<meta name="mobile-web-app-capable" content="yes">'
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+    '<meta name="theme-color" content="#04101d">'
+)
+
+
+def lan_ip() -> str:
+    """This machine's address on the local network (best effort)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return "this-mac"
+
+
+def _is_local_request() -> bool:
+    return (request.remote_addr or "") in ("127.0.0.1", "::1")
+
+
+@app.before_request
+def _phone_gate():
+    """Requests from other devices need phone access ON and the right PIN."""
+    if _is_local_request():
+        return None
+    cfg = STATE.config
+    if not cfg.get("phone_access_enabled") or not cfg.get("phone_pin"):
+        abort(403)
+    if request.endpoint in ("pin", "manifest", "icon_png", "health"):
+        return None
+    if session.get("phone_ok"):
+        return None
+    return redirect(url_for("pin"))
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +133,7 @@ BASE = """
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Solo Studio</title>
+{{ pwa_meta|safe }}
 <style>
 :root { --bg:#f5f7fa; --card:#fff; --ink:#17222e; --mut:#68788a; --line:#e3e9ef;
         --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; }
@@ -372,6 +417,34 @@ keep the saved value.</p>
   value="{{ config.poll_interval_seconds }}" min="30" step="10">
 </div>
 </div>
+<h2 style="margin-top:18px">Your phone</h2>
+<div class="grid">
+<div>
+<label><input type="checkbox" name="phone_access_enabled" value="1"
+  {% if config.phone_access_enabled %}checked{% endif %}
+  style="width:auto;margin-right:8px">Let my phone open this dashboard (same Wi-Fi)</label>
+<label>PIN for phone access (4–8 digits)</label>
+<input type="text" name="phone_pin" value="{{ config.phone_pin }}" inputmode="numeric">
+{% if config.phone_access_enabled and config.phone_pin %}
+<p class="muted">On your phone's browser go to: <code>http://{{ lan_ip }}:8747</code><br>
+Then tap Share → <b>Add to Home Screen</b> for an app icon.
+Quit and reopen Solo Studio after changing this.</p>
+{% else %}<p class="muted">Turn on + set a PIN, save, then quit and reopen Solo Studio.</p>{% endif %}
+</div>
+<div>
+<label><input type="checkbox" name="ntfy_enabled" value="1"
+  {% if config.ntfy_enabled %}checked{% endif %}
+  style="width:auto;margin-right:8px">Push notifications to my phone (free ntfy app)</label>
+{% if config.ntfy_topic %}
+<p class="muted">1. Install <b>ntfy</b> from the App Store.<br>
+2. In ntfy tap <b>+</b> and subscribe to this exact topic:<br>
+<code>{{ config.ntfy_topic }}</code><br>
+3. You'll get a buzz for replies, previews, and payments.
+<a href="{{ url_for('test_notification') }}">Send a test notification</a></p>
+{% else %}<p class="muted">Tick the box and Save — a private topic name will be
+created for you, with instructions here.</p>{% endif %}
+</div>
+</div>
 <h2 style="margin-top:18px">Cold email template</h2>
 <p class="muted">Placeholders: {lead_name} {your_name} {studio_name} {price} {mailing_address}</p>
 <label>Subject</label>
@@ -412,7 +485,7 @@ app.jinja_env.loader = DictLoader({"base": BASE})
 
 @app.context_processor
 def _inject():
-    return {"config": STATE.config}
+    return {"config": STATE.config, "pwa_meta": PWA_META}
 
 
 def _render(tpl, **ctx):
@@ -423,6 +496,7 @@ JARVIS = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>JARVIS — Solo Studio</title>
+PWAMETA_PLACEHOLDER
 <style>
 :root{--cy:#5ad7ff;--cy2:#9fe8ff;--dim:#3a6d8a;--amber:#ffb454;--grn:#4ade80;
       --red:#ff6b6b;--ink:#dff3ff}
@@ -501,9 +575,23 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
 #feedlines .k.warn{color:var(--amber)}
 .back{color:var(--dim);text-decoration:none;font-size:11px;letter-spacing:.2em}
 .back:hover{color:var(--cy2)}
-@media (max-width:900px){.hud{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto auto;
-  grid-template-areas:"top" "left" "core" "right" "feed";overflow:auto}
-  body{overflow:auto}.stat b{font-size:30px}}
+@media (max-width:900px){
+  body{overflow:auto}
+  .hud{display:flex;flex-direction:column;height:auto;gap:18px;padding:16px 18px 30px}
+  .top{flex-wrap:wrap;row-gap:8px}
+  .top .sys{font-size:15px;letter-spacing:.26em}
+  .top .clock{margin-left:auto;font-size:15px}
+  .top .greet{order:9;flex-basis:100%}
+  .back{display:none}
+  .kpis{gap:8px 24px;padding-bottom:12px}
+  .kpi b{font-size:19px}
+  .left{flex-direction:row;flex-wrap:wrap;gap:18px 34px;justify-content:flex-start}
+  .stat b{font-size:31px}
+  .reactor{width:230px;height:230px}
+  .right{gap:10px}
+  .feed{padding-bottom:10px}
+  #feedlines div{white-space:normal}
+}
 </style></head><body>
 <div class="hud">
   <div class="top">
@@ -650,9 +738,66 @@ def health():
     return {"app": HEALTH_MARKER}
 
 
+@app.get("/manifest.webmanifest")
+def manifest():
+    return {
+        "name": "Solo Studio", "short_name": "Solo Studio",
+        "start_url": "/", "display": "standalone",
+        "background_color": "#04101d", "theme_color": "#04101d",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }, 200, {"Content-Type": "application/manifest+json"}
+
+
+@app.get("/icon-<int:size>.png")
+def icon_png(size):
+    data = ICON_512 if size >= 512 else ICON_192
+    return data, 200, {"Content-Type": "image/png",
+                       "Cache-Control": "public, max-age=86400"}
+
+
+PIN_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solo Studio</title>{{ pwa_meta|safe }}
+<style>body{background:#04101d;color:#dff3ff;font:16px -apple-system,sans-serif;
+display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+form{text-align:center;padding:24px}
+h1{font-size:20px;letter-spacing:.3em;color:#9fe8ff;font-weight:600}
+input{font-size:28px;text-align:center;letter-spacing:.4em;width:220px;padding:12px;
+border-radius:10px;border:1px solid #2a5a7a;background:#0a1f33;color:#fff;margin:18px 0}
+button{font-size:16px;font-weight:600;padding:12px 40px;border-radius:10px;border:0;
+background:#2563eb;color:#fff}
+.err{color:#ff8f8f;min-height:1.4em}</style></head>
+<body><form method="post">
+<h1>SOLO STUDIO</h1>
+<div class="err">{{ error or "" }}</div>
+<input type="password" name="pin" inputmode="numeric" autocomplete="one-time-code"
+  placeholder="PIN" autofocus>
+<div><button>Unlock</button></div>
+</form></body></html>"""
+
+
+@app.route("/pin", methods=["GET", "POST"])
+def pin():
+    error = None
+    if request.method == "POST":
+        want = str(STATE.config.get("phone_pin") or "")
+        got = (request.form.get("pin") or "").strip()
+        if want and hmac.compare_digest(got, want):
+            session["phone_ok"] = True
+            session.permanent = True
+            return redirect(url_for("dashboard"))
+        time.sleep(1)  # slow down guessing
+        error = "Wrong PIN — try again."
+    return render_template_string(PIN_PAGE, error=error, pwa_meta=PWA_META)
+
+
 @app.get("/jarvis")
 def jarvis():
-    return JARVIS
+    return JARVIS.replace("PWAMETA_PLACEHOLDER", PWA_META)
 
 
 @app.get("/jarvis/data")
@@ -906,11 +1051,31 @@ def setup():
                 cfg[field] = max(lo, cast(request.form.get(field, "")))
             except (TypeError, ValueError):
                 pass
+        cfg["phone_access_enabled"] = bool(request.form.get("phone_access_enabled"))
+        pin_val = (request.form.get("phone_pin") or "").strip()
+        cfg["phone_pin"] = pin_val if pin_val.isdigit() and 4 <= len(pin_val) <= 8 \
+            else ("" if not pin_val else cfg.get("phone_pin", ""))
+        cfg["ntfy_enabled"] = bool(request.form.get("ntfy_enabled"))
+        if cfg["ntfy_enabled"] and not cfg.get("ntfy_topic"):
+            cfg["ntfy_topic"] = "solo-studio-" + secrets.token_hex(8)
         core.save_config(cfg)
         STATE.reload()
         flash("Settings saved.", "ok")
         return redirect(url_for("setup"))
-    return _render(SETUP, key_fields=KEY_FIELDS)
+    return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=lan_ip())
+
+
+@app.get("/setup/test_notification")
+def test_notification():
+    try:
+        STATE.services.push_notify(
+            "Solo Studio test", "Notifications are working! You'll get a buzz "
+            "for replies, previews, and payments.", tags="white_check_mark")
+        flash("Test notification sent — check your phone (subscribe to the topic "
+              "in the ntfy app first).", "ok")
+    except Exception as e:
+        flash(f"Couldn't send: {e}", "err")
+    return redirect(url_for("setup"))
 
 
 @app.get("/setup/test")
@@ -997,8 +1162,13 @@ def main():
     if args.open_browser:
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     start_autopilot_thread()
+    cfg = STATE.config
+    host = "0.0.0.0" if (cfg.get("phone_access_enabled")
+                         and cfg.get("phone_pin")) else "127.0.0.1"
+    if host == "0.0.0.0":
+        print(f"Phone access ON — from your phone: http://{lan_ip()}:{args.port}/")
     print(f"Solo Studio dashboard: {url}")
-    app.run(host="127.0.0.1", port=args.port, debug=False, use_reloader=False)
+    app.run(host=host, port=args.port, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":

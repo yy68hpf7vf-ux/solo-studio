@@ -476,3 +476,32 @@ class ConcurrencyTest(unittest.TestCase):
         for t in threads: t.start()
         for t in threads: t.join()
         self.assertEqual(len(wins), 1)
+
+
+class NotificationTest(PipelineTest):
+    def test_payment_sends_phone_notification(self):
+        notes = []
+        self.svc.push_notify = (
+            lambda title, message, priority="default", tags="":
+            notes.append((title, priority)))
+        lead = self.make_contacted_lead()
+        self.svc.add_reply("m1", lead["thread_id"], "joe@example.com", "yes")
+        self.agent.process_replies()
+        self.svc.add_reply("m2", lead["thread_id"], "joe@example.com", "yes")
+        self.agent.process_replies()
+        self.svc.pay("cs_1")
+        self.agent.poll_payments()
+        titles = [t for t, _ in notes]
+        self.assertTrue(any("PAID $500" in t for t in titles), titles)
+        self.assertTrue(any("delivered" in t.lower() for t in titles), titles)
+        # The money notification is high priority.
+        self.assertIn(("Joe's Plumbing PAID $500", "high"), notes)
+
+    def test_notification_failure_never_breaks_pipeline(self):
+        def boom(*a, **k):
+            raise RuntimeError("ntfy down")
+        self.svc.push_notify = boom
+        lead = self.make_contacted_lead()
+        self.svc.add_reply("m1", lead["thread_id"], "joe@example.com", "yes")
+        self.agent.process_replies()
+        self.assertEqual(self.stage(lead["id"]), core.STAGE_PREVIEW_SENT)
