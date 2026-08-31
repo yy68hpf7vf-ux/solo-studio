@@ -12,7 +12,9 @@ exec >> "$LOG" 2>&1
 echo "=== launch $(date) ==="
 
 dialog() {
-    /usr/bin/osascript -e "display dialog \"$1\" with title \"Solo Studio\" buttons {\"OK\"} default button 1 with icon caution" >/dev/null 2>&1 || true
+    local msg
+    msg=$(printf '%s' "$1" | /usr/bin/tr -d '"\\')   # keep osascript quoting safe
+    /usr/bin/osascript -e "display dialog \"$msg\" with title \"Solo Studio\" buttons {\"OK\"} default button 1 with icon caution" >/dev/null 2>&1 || true
 }
 notify() {
     /usr/bin/osascript -e "display notification \"$1\" with title \"Solo Studio\"" >/dev/null 2>&1 || true
@@ -24,16 +26,22 @@ if /usr/bin/nc -z 127.0.0.1 8747 >/dev/null 2>&1; then
     exit 0
 fi
 
-# Find a working Python 3.
+# Find the newest Python 3 on this Mac. The app needs 3.11 or newer — the
+# Python bundled with macOS's developer tools is 3.9 and is NOT enough.
 PY=""
-for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
-    if [ -x "$c" ] && "$c" -c 'import sys; assert sys.version_info >= (3, 9)' >/dev/null 2>&1; then
+PY_BEST=0
+for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 \
+         /Library/Frameworks/Python.framework/Versions/*/bin/python3; do
+    [ -x "$c" ] || continue
+    v="$("$c" -c 'import sys; print(sys.version_info[0]*100 + sys.version_info[1])' 2>/dev/null)" || continue
+    if [ -n "$v" ] && [ "$v" -gt "$PY_BEST" ]; then
+        PY_BEST="$v"
         PY="$c"
-        break
     fi
 done
-if [ -z "$PY" ]; then
-    dialog "Solo Studio needs Python 3, which isn't installed yet. The easiest fix: go to python.org/downloads, install Python 3, then open Solo Studio again."
+echo "best python: ${PY:-none} (v=$PY_BEST)"
+if [ -z "$PY" ] || [ "$PY_BEST" -lt 311 ]; then
+    dialog "Solo Studio needs Python 3.11 or newer, and this Mac doesn't have it yet. I'll open python.org for you — click the yellow download button, run the installer, then open Solo Studio again."
     /usr/bin/open "https://www.python.org/downloads/"
     exit 1
 fi
@@ -43,10 +51,16 @@ VENV="$SUPPORT/venv"
 if [ ! -x "$VENV/bin/python3" ] || ! "$VENV/bin/python3" -c 'import flask, requests, anthropic, inkbox' >/dev/null 2>&1; then
     notify "First-time setup: installing components (about a minute)…"
     rm -rf "$VENV"
-    "$PY" -m venv "$VENV" || { dialog "Couldn't set up the Python environment. Details are in launcher.log inside ~/Library/Application Support/Solo Studio."; exit 1; }
-    "$VENV/bin/pip" install --upgrade pip
-    if ! "$VENV/bin/pip" install flask requests anthropic inkbox; then
-        dialog "Couldn't download Solo Studio's components — check your internet connection and open the app again."
+    if ! "$PY" -m venv "$VENV"; then
+        dialog "Couldn't set up the Python environment. Details are in launcher.log inside ~/Library/Application Support/Solo Studio."
+        exit 1
+    fi
+    "$VENV/bin/python3" -m pip install --upgrade pip
+    PIPLOG="$SUPPORT/pip-install.log"
+    if ! "$VENV/bin/python3" -m pip install flask requests anthropic inkbox > "$PIPLOG" 2>&1; then
+        cat "$PIPLOG"
+        ERR="$(grep -m1 -E 'ERROR:|error:' "$PIPLOG" | cut -c1-220)"
+        dialog "Couldn't install Solo Studio's components. The installer said: ${ERR:-unknown error — see launcher.log in ~/Library/Application Support/Solo Studio}. If this mentions 'No matching distribution' or a Python version, install the newest Python from python.org and try again."
         rm -rf "$VENV"
         exit 1
     fi
