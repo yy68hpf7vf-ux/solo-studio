@@ -44,10 +44,11 @@ An automated lead-gen + sales pipeline for a one-person web design studio.
 5. The very first launch spends about a minute installing its components,
    then your browser opens the dashboard automatically.
 
-**One-time requirement: Python 3.11 or newer.** The Python that comes with
-macOS is too old (3.9). If the app tells you so, go to
-[python.org/downloads](https://www.python.org/downloads/), click the big
-download button, run the installer, then open Solo Studio again.
+**One-time requirement: Python 3.13.** The Python that comes with macOS is
+too old (3.9), and the newest one (3.14) is too new for some of the app's
+components. If the app tells you Python is missing or wrong, it opens the
+right installer for you automatically — run it, then open Solo Studio again.
+(Direct link: [Python 3.13.7 for macOS](https://www.python.org/ftp/python/3.13.7/python-3.13.7-macos11.pkg).)
 
 To keep it in your Dock: while the app is running, right-click its Dock icon
 → **Options → Keep in Dock**.

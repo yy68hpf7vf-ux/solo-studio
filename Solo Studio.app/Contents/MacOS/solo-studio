@@ -26,23 +26,33 @@ if /usr/bin/nc -z 127.0.0.1 8747 >/dev/null 2>&1; then
     exit 0
 fi
 
-# Find the newest Python 3 on this Mac. The app needs 3.11 or newer — the
-# Python bundled with macOS's developer tools is 3.9 and is NOT enough.
+# Find a suitable Python. The app needs 3.11–3.13: the Python bundled with
+# macOS's developer tools (3.9) is too old, and 3.14+ is too NEW for some of
+# the app's components. Prefer the newest one inside the supported range.
+PY313_URL="https://www.python.org/ftp/python/3.13.7/python-3.13.7-macos11.pkg"
 PY=""
 PY_BEST=0
+PY_ANY=0
 for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 \
+         /opt/homebrew/bin/python3.* /usr/local/bin/python3.* \
          /Library/Frameworks/Python.framework/Versions/*/bin/python3; do
     [ -x "$c" ] || continue
     v="$("$c" -c 'import sys; print(sys.version_info[0]*100 + sys.version_info[1])' 2>/dev/null)" || continue
-    if [ -n "$v" ] && [ "$v" -gt "$PY_BEST" ]; then
+    [ -n "$v" ] || continue
+    [ "$v" -gt "$PY_ANY" ] && PY_ANY="$v"
+    if [ "$v" -ge 311 ] && [ "$v" -le 313 ] && [ "$v" -gt "$PY_BEST" ]; then
         PY_BEST="$v"
         PY="$c"
     fi
 done
-echo "best python: ${PY:-none} (v=$PY_BEST)"
-if [ -z "$PY" ] || [ "$PY_BEST" -lt 311 ]; then
-    dialog "Solo Studio needs Python 3.11 or newer, and this Mac doesn't have it yet. I'll open python.org for you — click the yellow download button, run the installer, then open Solo Studio again."
-    /usr/bin/open "https://www.python.org/downloads/"
+echo "picked python: ${PY:-none} (best=$PY_BEST, any=$PY_ANY)"
+if [ -z "$PY" ]; then
+    if [ "$PY_ANY" -ge 314 ]; then
+        dialog "The Python on this Mac is version 3.14 or newer — too new for some of Solo Studio's components. I'll download the Python 3.13 installer for you; run it, then open Solo Studio again. (Python 3.13 installs alongside, nothing breaks.)"
+    else
+        dialog "Solo Studio needs Python 3.13, which isn't on this Mac yet. I'll download the installer for you — run it, then open Solo Studio again."
+    fi
+    /usr/bin/open "$PY313_URL"
     exit 1
 fi
 
@@ -57,7 +67,7 @@ if [ ! -x "$VENV/bin/python3" ] || ! "$VENV/bin/python3" -c 'import flask, reque
     fi
     "$VENV/bin/python3" -m pip install --upgrade pip
     PIPLOG="$SUPPORT/pip-install.log"
-    if ! "$VENV/bin/python3" -m pip install flask requests anthropic inkbox > "$PIPLOG" 2>&1; then
+    if ! "$VENV/bin/python3" -m pip install --prefer-binary flask requests anthropic inkbox > "$PIPLOG" 2>&1; then
         cat "$PIPLOG"
         ERR="$(grep -m1 -E 'ERROR:|error:' "$PIPLOG" | cut -c1-220)"
         dialog "Couldn't install Solo Studio's components. The installer said: ${ERR:-unknown error — see launcher.log in ~/Library/Application Support/Solo Studio}. If this mentions 'No matching distribution' or a Python version, install the newest Python from python.org and try again."
