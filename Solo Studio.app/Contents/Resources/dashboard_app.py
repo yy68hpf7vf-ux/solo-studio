@@ -44,6 +44,7 @@ STATE = State()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+app.json.sort_keys = False  # keep pipeline-stage order in /jarvis/data
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +151,7 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
   <a href="{{ url_for('dashboard') }}">Dashboard</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('setup') }}">Setup</a>
+  <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#7dd3fc">◉ JARVIS</a>
 </header>
 <main>
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -417,6 +419,222 @@ def _render(tpl, **ctx):
     return render_template_string(tpl, **ctx)
 
 
+JARVIS = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS — Solo Studio</title>
+<style>
+:root{--cy:#5ad7ff;--cy2:#9fe8ff;--dim:#3a6d8a;--amber:#ffb454;--grn:#4ade80;
+      --red:#ff6b6b;--ink:#dff3ff}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:radial-gradient(1200px 800px at 50% 42%,#0a1f33 0%,#04101d 55%,#020810 100%);
+  color:var(--ink);font:14px/1.45 "SF Mono",Menlo,Consolas,monospace;overflow:hidden}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(90,215,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(90,215,255,.045) 1px,transparent 1px);
+  background-size:44px 44px}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.12) 0 2px,transparent 2px 4px)}
+.hud{display:grid;height:100vh;padding:22px 30px;gap:14px;
+  grid-template-rows:auto 1fr 218px;grid-template-columns:270px 1fr 300px;
+  grid-template-areas:"top top top" "left core right" "feed feed feed"}
+.label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+.glow{text-shadow:0 0 14px rgba(90,215,255,.75),0 0 34px rgba(90,215,255,.30)}
+/* top bar */
+.top{grid-area:top;display:flex;align-items:baseline;gap:22px;
+  border-bottom:1px solid rgba(90,215,255,.22);padding-bottom:12px}
+.top .sys{font-size:17px;letter-spacing:.34em;color:var(--cy2)}
+.top .greet{color:#8fc7e6;font-size:13px;letter-spacing:.06em}
+.top .clock{margin-left:auto;font-size:17px;color:var(--cy2);letter-spacing:.18em}
+.chip{font-size:10px;letter-spacing:.2em;padding:4px 12px;border:1px solid;border-radius:3px}
+.chip.on{color:var(--grn);border-color:rgba(74,222,128,.5);text-shadow:0 0 10px rgba(74,222,128,.7)}
+.chip.off{color:var(--amber);border-color:rgba(255,180,84,.5);text-shadow:0 0 10px rgba(255,180,84,.6)}
+/* left stats */
+.left{grid-area:left;display:flex;flex-direction:column;justify-content:center;gap:26px}
+.stat .label{margin-bottom:4px}
+.stat b{display:block;font-size:44px;font-weight:600;color:#fff;line-height:1.05}
+.stat .sub{font-size:11px;color:var(--dim);letter-spacing:.08em}
+/* core */
+.core{grid-area:core;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;min-height:0}
+.reactor{width:min(46vh,420px);height:min(46vh,420px);
+  filter:drop-shadow(0 0 26px rgba(90,215,255,.35))}
+.reactor circle,.reactor line{fill:none;stroke:var(--cy);vector-effect:non-scaling-stroke}
+.rSeg{stroke-width:7;stroke-dasharray:52 26;opacity:.85;
+  transform-origin:200px 200px;animation:spin 26s linear infinite}
+.rSeg2{stroke-width:2.4;stroke-dasharray:8 10;opacity:.7;
+  transform-origin:200px 200px;animation:spin 14s linear infinite reverse}
+.rThin{stroke-width:1;opacity:.4}
+.rSeg3{stroke-width:11;stroke-dasharray:26 42;opacity:.6;
+  transform-origin:200px 200px;animation:spin 9s linear infinite}
+.spokes line{stroke-width:1.4;opacity:.5}
+.spokes{transform-origin:200px 200px;animation:spin 60s linear infinite reverse}
+.coreGlow{animation:pulse 2.6s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
+.coreLabel{margin-top:16px;text-align:center}
+.coreLabel .label{margin-bottom:5px}
+.coreLabel b{font-size:15px;letter-spacing:.3em;color:var(--cy2)}
+/* right pipeline */
+.right{grid-area:right;display:flex;flex-direction:column;justify-content:center;gap:12px}
+.bar .label{display:flex;justify-content:space-between;margin-bottom:3px}
+.bar .label span:last-child{color:var(--cy2)}
+.track{height:7px;background:rgba(90,215,255,.10);border-radius:2px;overflow:hidden}
+.fill{height:100%;background:linear-gradient(90deg,rgba(90,215,255,.35),var(--cy));
+  box-shadow:0 0 10px rgba(90,215,255,.6);width:0;transition:width .9s ease}
+/* feed */
+.feed{grid-area:feed;border-top:1px solid rgba(90,215,255,.22);padding-top:10px;
+  overflow:hidden}
+.feed .label{margin-bottom:8px}
+#feedlines{overflow:hidden;font-size:12.5px}
+#feedlines div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  padding:1.5px 0;color:#a8d4ea}
+#feedlines .t{color:var(--dim)}
+#feedlines .k{color:var(--cy2)}
+#feedlines .k.pay{color:var(--grn)} #feedlines .k.err{color:var(--red)}
+#feedlines .k.warn{color:var(--amber)}
+.back{color:var(--dim);text-decoration:none;font-size:11px;letter-spacing:.2em}
+.back:hover{color:var(--cy2)}
+@media (max-width:900px){.hud{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto auto;
+  grid-template-areas:"top" "left" "core" "right" "feed";overflow:auto}
+  body{overflow:auto}.stat b{font-size:30px}}
+</style></head><body>
+<div class="hud">
+  <div class="top">
+    <span class="sys glow">J.A.R.V.I.S</span>
+    <span class="greet" id="greet"></span>
+    <span class="chip" id="autopilot">…</span>
+    <span class="clock glow" id="clock">--:--:--</span>
+    <a class="back" href="/">◀ CLASSIC</a>
+  </div>
+  <div class="left">
+    <div class="stat"><div class="label">Revenue collected</div>
+      <b class="glow" id="s-rev">$0</b><div class="sub" id="s-rev-sub"></div></div>
+    <div class="stat"><div class="label">Leads tracked</div>
+      <b class="glow" id="s-leads">0</b><div class="sub" id="s-leads-sub"></div></div>
+    <div class="stat"><div class="label">Active deals</div>
+      <b class="glow" id="s-deals">0</b><div class="sub">preview → payment</div></div>
+    <div class="stat"><div class="label">Sites delivered</div>
+      <b class="glow" id="s-sites">0</b><div class="sub">watermark-free &amp; live</div></div>
+  </div>
+  <div class="core">
+    <svg class="reactor" viewBox="0 0 400 400" aria-hidden="true">
+      <defs>
+        <radialGradient id="cg" cx="50%" cy="50%">
+          <stop offset="0%" stop-color="#eaffff" stop-opacity="1"/>
+          <stop offset="34%" stop-color="#9fe8ff" stop-opacity=".95"/>
+          <stop offset="70%" stop-color="#2ea8dd" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="#0a4a6e" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <circle class="rSeg"  cx="200" cy="200" r="186"/>
+      <circle class="rThin" cx="200" cy="200" r="168"/>
+      <circle class="rSeg2" cx="200" cy="200" r="150"/>
+      <g class="spokes" id="spokes"></g>
+      <circle class="rThin" cx="200" cy="200" r="104"/>
+      <circle class="rSeg3" cx="200" cy="200" r="82"/>
+      <circle class="coreGlow" cx="200" cy="200" r="52" fill="url(#cg)" stroke="none"/>
+    </svg>
+    <div class="coreLabel">
+      <div class="label">Solo Studio pipeline core</div>
+      <b class="glow" id="coreState">SYSTEMS NOMINAL</b>
+    </div>
+  </div>
+  <div class="right" id="bars"></div>
+  <div class="feed">
+    <div class="label">Mission log — live</div>
+    <div id="feedlines"></div>
+  </div>
+</div>
+<script>
+(function(){
+  var spokes = document.getElementById('spokes');
+  for (var i = 0; i < 12; i++) {
+    var a = i * Math.PI / 6;
+    var l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', 200 + 108 * Math.cos(a)); l.setAttribute('y1', 200 + 108 * Math.sin(a));
+    l.setAttribute('x2', 200 + 146 * Math.cos(a)); l.setAttribute('y2', 200 + 146 * Math.sin(a));
+    spokes.appendChild(l);
+  }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function tickClock(){
+    var d = new Date();
+    document.getElementById('clock').textContent =
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  setInterval(tickClock, 1000); tickClock();
+
+  var STAGE_LABELS = {found:'FOUND', contacted:'CONTACTED', building_preview:'BUILDING',
+    preview_sent:'PREVIEW SENT', sending_payment_link:'SENDING LINK',
+    payment_link_sent:'AWAITING PAYMENT', paid:'PAID', deploying_final:'DEPLOYING',
+    delivered:'DELIVERED', not_interested:'PASSED', error:'ATTENTION'};
+
+  function render(d){
+    var greetWord = 'Good evening'; var h = new Date().getHours();
+    if (h >= 5 && h < 12) greetWord = 'Good morning';
+    else if (h >= 12 && h < 18) greetWord = 'Good afternoon';
+    document.getElementById('greet').textContent =
+      greetWord + (d.owner ? ', ' + d.owner : '') + '. All services standing by.';
+    var ap = document.getElementById('autopilot');
+    ap.textContent = d.autopilot ? 'AUTOPILOT · ONLINE' : 'AUTOPILOT · STANDBY';
+    ap.className = 'chip ' + (d.autopilot ? 'on' : 'off');
+    document.getElementById('s-rev').textContent = '$' + d.revenue.toLocaleString();
+    document.getElementById('s-rev-sub').textContent = d.paid_count + ' paid project' + (d.paid_count === 1 ? '' : 's');
+    document.getElementById('s-leads').textContent = d.total_leads;
+    document.getElementById('s-leads-sub').textContent = d.contacted_total + ' contacted';
+    document.getElementById('s-deals').textContent = d.active_deals;
+    document.getElementById('s-sites').textContent = d.delivered;
+    document.getElementById('coreState').textContent =
+      d.attention > 0 ? d.attention + ' ITEM' + (d.attention === 1 ? '' : 'S') + ' NEED YOU'
+                      : 'SYSTEMS NOMINAL';
+    var bars = document.getElementById('bars'); bars.textContent = '';
+    var max = 1, k;
+    for (k in d.stages) if (d.stages[k] > max) max = d.stages[k];
+    for (k in d.stages) {
+      var wrap = document.createElement('div'); wrap.className = 'bar';
+      var lab = document.createElement('div'); lab.className = 'label';
+      var s1 = document.createElement('span'); s1.textContent = STAGE_LABELS[k] || k;
+      var s2 = document.createElement('span'); s2.textContent = d.stages[k];
+      lab.appendChild(s1); lab.appendChild(s2);
+      var track = document.createElement('div'); track.className = 'track';
+      var fill = document.createElement('div'); fill.className = 'fill';
+      track.appendChild(fill); wrap.appendChild(lab); wrap.appendChild(track);
+      bars.appendChild(wrap);
+      (function(f, w){ requestAnimationFrame(function(){ f.style.width = w + '%'; }); })
+        (fill, Math.round(100 * d.stages[k] / max));
+    }
+    var feed = document.getElementById('feedlines'); feed.textContent = '';
+    if (!d.events.length) {
+      var e0 = document.createElement('div');
+      e0.textContent = '[--:--:--] awaiting first mission — find leads from the classic view';
+      feed.appendChild(e0);
+    }
+    d.events.forEach(function(ev){
+      var line = document.createElement('div');
+      var t = document.createElement('span'); t.className = 't';
+      t.textContent = '[' + ev.time + '] ';
+      var kEl = document.createElement('span');
+      kEl.className = 'k' + (ev.kind.indexOf('pay') === 0 || ev.kind === 'delivered' ? ' pay'
+        : ev.kind.indexOf('error') >= 0 || ev.kind.indexOf('fail') >= 0 ? ' err'
+        : ev.kind.indexOf('attention') >= 0 || ev.kind.indexOf('unmatched') >= 0 ? ' warn' : '');
+      kEl.textContent = ev.kind.toUpperCase().replace(/_/g, ' ');
+      var dEl = document.createElement('span'); dEl.textContent = '  ' + ev.detail;
+      line.appendChild(t); line.appendChild(kEl); line.appendChild(dEl);
+      feed.appendChild(line);
+    });
+  }
+  function refresh(){
+    fetch('/jarvis/data').then(function(r){ return r.json(); }).then(render)
+      .catch(function(){ document.getElementById('coreState').textContent = 'LINK LOST — RETRYING'; });
+  }
+  setInterval(refresh, 4000); refresh();
+})();
+</script>
+</body></html>
+"""
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -424,6 +642,47 @@ def _render(tpl, **ctx):
 @app.get("/health")
 def health():
     return {"app": HEALTH_MARKER}
+
+
+@app.get("/jarvis")
+def jarvis():
+    return JARVIS
+
+
+@app.get("/jarvis/data")
+def jarvis_data():
+    db = STATE.db
+    leads = db.all_leads()
+    stages = {}
+    for lead in leads:
+        stages[lead["stage"]] = stages.get(lead["stage"], 0) + 1
+    active = sum(stages.get(s, 0) for s in (
+        core.STAGE_CONTACTED, core.STAGE_BUILDING_PREVIEW, core.STAGE_PREVIEW_SENT,
+        core.STAGE_SENDING_PAYMENT_LINK, core.STAGE_PAYMENT_LINK_SENT,
+        core.STAGE_PAID, core.STAGE_DEPLOYING_FINAL))
+    contacted_total = sum(1 for lead in leads
+                          if lead["stage"] not in (core.STAGE_FOUND,))
+    paid_count = sum(1 for lead in leads if lead["paid_at"])
+    events = []
+    for ev in db.recent_events(14):
+        events.append({
+            "time": (ev["created_at"] or "")[11:19] or "--:--:--",
+            "kind": ev["kind"],
+            "detail": (ev["detail"] or "")[:160],
+        })
+    return {
+        "owner": (STATE.config.get("your_name") or "").split(" ")[0] or None,
+        "autopilot": bool(STATE.config.get("autopilot_enabled")),
+        "revenue": db.revenue_cents() // 100,
+        "paid_count": paid_count,
+        "total_leads": len(leads),
+        "contacted_total": contacted_total,
+        "active_deals": active,
+        "delivered": stages.get(core.STAGE_DELIVERED, 0),
+        "attention": len(db.attention_events()),
+        "stages": {s: stages[s] for s in core.ALL_STAGES if s in stages},
+        "events": events,
+    }
 
 
 @app.get("/")

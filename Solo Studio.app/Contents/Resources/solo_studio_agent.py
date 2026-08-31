@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS leads (
     netlify_url TEXT,
     stripe_session_id TEXT,
     stripe_session_url TEXT,
+    amount_cents INTEGER,
     paid_at TEXT,
     delivered_at TEXT,
     attempts INTEGER NOT NULL DEFAULT 0,
@@ -231,6 +232,7 @@ class Database:
         self._local = threading.local()
         with self._conn() as c:
             c.executescript(SCHEMA)
+        self._migrate()
 
     def _conn(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)
@@ -241,6 +243,21 @@ class Database:
             conn.execute("PRAGMA busy_timeout=30000")
             self._local.conn = conn
         return conn
+
+    def _migrate(self) -> None:
+        """Add columns introduced after the first release to existing DBs."""
+        c = self._conn()
+        have = {row["name"] for row in c.execute("PRAGMA table_info(leads)")}
+        for col, decl in (("amount_cents", "INTEGER"),):
+            if col not in have:
+                with c:
+                    c.execute(f"ALTER TABLE leads ADD COLUMN {col} {decl}")
+
+    def revenue_cents(self) -> int:
+        row = self._conn().execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) AS r FROM leads"
+            " WHERE paid_at IS NOT NULL").fetchone()
+        return int(row["r"] or 0)
 
     # -- leads ------------------------------------------------------------
 
@@ -1023,8 +1040,10 @@ class Agent:
                 created = self.services.stripe_create_checkout(
                     dict(lead), lead["netlify_url"] or "https://example.com")
                 session_id, session_url = created["session_id"], created["url"]
+                amount = int(round(float(self.config.get("site_price_usd", 500)) * 100))
                 self.db.update_lead(lead_id, stripe_session_id=session_id,
-                                    stripe_session_url=session_url)
+                                    stripe_session_url=session_url,
+                                    amount_cents=amount)
                 self.db.log(lead_id, "checkout_created",
                             f"Stripe Checkout Session {session_id} created.")
             cfg = self.config
