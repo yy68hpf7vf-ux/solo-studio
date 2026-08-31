@@ -1,0 +1,56 @@
+#!/bin/bash
+# Solo Studio launcher — runs the dashboard with no Terminal window.
+# First launch creates a private Python environment and installs what it
+# needs (about a minute); after that, launches are instant.
+set -u
+
+RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
+SUPPORT="$HOME/Library/Application Support/Solo Studio"
+LOG="$SUPPORT/launcher.log"
+mkdir -p "$SUPPORT"
+exec >> "$LOG" 2>&1
+echo "=== launch $(date) ==="
+
+dialog() {
+    /usr/bin/osascript -e "display dialog \"$1\" with title \"Solo Studio\" buttons {\"OK\"} default button 1 with icon caution" >/dev/null 2>&1 || true
+}
+notify() {
+    /usr/bin/osascript -e "display notification \"$1\" with title \"Solo Studio\"" >/dev/null 2>&1 || true
+}
+
+# If the dashboard is already running, just open it in the browser.
+if /usr/bin/nc -z 127.0.0.1 8747 >/dev/null 2>&1; then
+    /usr/bin/open "http://127.0.0.1:8747/"
+    exit 0
+fi
+
+# Find a working Python 3.
+PY=""
+for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
+    if [ -x "$c" ] && "$c" -c 'import sys; assert sys.version_info >= (3, 9)' >/dev/null 2>&1; then
+        PY="$c"
+        break
+    fi
+done
+if [ -z "$PY" ]; then
+    dialog "Solo Studio needs Python 3, which isn't installed yet. The easiest fix: go to python.org/downloads, install Python 3, then open Solo Studio again."
+    /usr/bin/open "https://www.python.org/downloads/"
+    exit 1
+fi
+
+# Private environment with the app's dependencies.
+VENV="$SUPPORT/venv"
+if [ ! -x "$VENV/bin/python3" ] || ! "$VENV/bin/python3" -c 'import flask, requests, anthropic, inkbox' >/dev/null 2>&1; then
+    notify "First-time setup: installing components (about a minute)…"
+    rm -rf "$VENV"
+    "$PY" -m venv "$VENV" || { dialog "Couldn't set up the Python environment. Details are in launcher.log inside ~/Library/Application Support/Solo Studio."; exit 1; }
+    "$VENV/bin/pip" install --upgrade pip
+    if ! "$VENV/bin/pip" install flask requests anthropic inkbox; then
+        dialog "Couldn't download Solo Studio's components — check your internet connection and open the app again."
+        rm -rf "$VENV"
+        exit 1
+    fi
+    notify "Setup finished — opening your dashboard."
+fi
+
+exec "$VENV/bin/python3" "$RES/dashboard_app.py" --open-browser

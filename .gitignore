@@ -1,0 +1,9 @@
+config.json
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+.DS_Store
+launcher.log
+venv/
