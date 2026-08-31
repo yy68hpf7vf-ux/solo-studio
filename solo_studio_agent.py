@@ -259,6 +259,25 @@ class Database:
             " WHERE paid_at IS NOT NULL").fetchone()
         return int(row["r"] or 0)
 
+    def pending_cents(self) -> int:
+        """Value of payment links that are out but not yet paid."""
+        row = self._conn().execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) AS r FROM leads"
+            " WHERE stage=? AND paid_at IS NULL",
+            (STAGE_PAYMENT_LINK_SENT,)).fetchone()
+        return int(row["r"] or 0)
+
+    def event_counts(self) -> dict:
+        """How many times each event kind has happened, ever."""
+        return {row["kind"]: row["n"] for row in self._conn().execute(
+            "SELECT kind, COUNT(*) AS n FROM events GROUP BY kind")}
+
+    def distinct_replied_leads(self) -> int:
+        row = self._conn().execute(
+            "SELECT COUNT(DISTINCT lead_id) AS n FROM events"
+            " WHERE kind='reply_received' AND lead_id IS NOT NULL").fetchone()
+        return int(row["n"] or 0)
+
     # -- leads ------------------------------------------------------------
 
     def add_lead(self, *, place_id, name, address, phone, category, email=None) -> int | None:

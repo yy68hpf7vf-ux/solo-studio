@@ -436,9 +436,14 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;
   background-size:44px 44px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.12) 0 2px,transparent 2px 4px)}
-.hud{display:grid;height:100vh;padding:22px 30px;gap:14px;
-  grid-template-rows:auto 1fr 218px;grid-template-columns:270px 1fr 300px;
-  grid-template-areas:"top top top" "left core right" "feed feed feed"}
+.hud{display:grid;height:100vh;padding:20px 30px;gap:12px;
+  grid-template-rows:auto auto 1fr 196px;grid-template-columns:280px 1fr 300px;
+  grid-template-areas:"top top top" "kpis kpis kpis" "left core right" "feed feed feed"}
+.kpis{grid-area:kpis;display:flex;flex-wrap:wrap;gap:6px 30px;
+  border-bottom:1px solid rgba(90,215,255,.14);padding:2px 0 10px}
+.kpi .label{margin-bottom:1px}
+.kpi b{font-size:21px;color:#fff;font-weight:600}
+.kpi b.glow{text-shadow:0 0 10px rgba(90,215,255,.6)}
 .label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
 .glow{text-shadow:0 0 14px rgba(90,215,255,.75),0 0 34px rgba(90,215,255,.30)}
 /* top bar */
@@ -451,14 +456,14 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
 .chip.on{color:var(--grn);border-color:rgba(74,222,128,.5);text-shadow:0 0 10px rgba(74,222,128,.7)}
 .chip.off{color:var(--amber);border-color:rgba(255,180,84,.5);text-shadow:0 0 10px rgba(255,180,84,.6)}
 /* left stats */
-.left{grid-area:left;display:flex;flex-direction:column;justify-content:center;gap:26px}
+.left{grid-area:left;display:flex;flex-direction:column;justify-content:center;gap:22px}
 .stat .label{margin-bottom:4px}
-.stat b{display:block;font-size:44px;font-weight:600;color:#fff;line-height:1.05}
+.stat b{display:block;font-size:37px;font-weight:600;color:#fff;line-height:1.05}
 .stat .sub{font-size:11px;color:var(--dim);letter-spacing:.08em}
 /* core */
 .core{grid-area:core;display:flex;flex-direction:column;align-items:center;
   justify-content:center;min-height:0}
-.reactor{width:min(46vh,420px);height:min(46vh,420px);
+.reactor{width:min(40vh,380px);height:min(40vh,380px);
   filter:drop-shadow(0 0 26px rgba(90,215,255,.35))}
 .reactor circle,.reactor line{fill:none;stroke:var(--cy);vector-effect:non-scaling-stroke}
 .rSeg{stroke-width:7;stroke-dasharray:52 26;opacity:.85;
@@ -508,16 +513,8 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
     <span class="clock glow" id="clock">--:--:--</span>
     <a class="back" href="/">◀ CLASSIC</a>
   </div>
-  <div class="left">
-    <div class="stat"><div class="label">Revenue collected</div>
-      <b class="glow" id="s-rev">$0</b><div class="sub" id="s-rev-sub"></div></div>
-    <div class="stat"><div class="label">Leads tracked</div>
-      <b class="glow" id="s-leads">0</b><div class="sub" id="s-leads-sub"></div></div>
-    <div class="stat"><div class="label">Active deals</div>
-      <b class="glow" id="s-deals">0</b><div class="sub">preview → payment</div></div>
-    <div class="stat"><div class="label">Sites delivered</div>
-      <b class="glow" id="s-sites">0</b><div class="sub">watermark-free &amp; live</div></div>
-  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="left" id="money"></div>
   <div class="core">
     <svg class="reactor" viewBox="0 0 400 400" aria-hidden="true">
       <defs>
@@ -579,12 +576,21 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
     var ap = document.getElementById('autopilot');
     ap.textContent = d.autopilot ? 'AUTOPILOT · ONLINE' : 'AUTOPILOT · STANDBY';
     ap.className = 'chip ' + (d.autopilot ? 'on' : 'off');
-    document.getElementById('s-rev').textContent = '$' + d.revenue.toLocaleString();
-    document.getElementById('s-rev-sub').textContent = d.paid_count + ' paid project' + (d.paid_count === 1 ? '' : 's');
-    document.getElementById('s-leads').textContent = d.total_leads;
-    document.getElementById('s-leads-sub').textContent = d.contacted_total + ' contacted';
-    document.getElementById('s-deals').textContent = d.active_deals;
-    document.getElementById('s-sites').textContent = d.delivered;
+    var money = document.getElementById('money'); money.textContent = '';
+    d.money.forEach(function(m){
+      var w = document.createElement('div'); w.className = 'stat';
+      var lab = document.createElement('div'); lab.className = 'label'; lab.textContent = m.l;
+      var b = document.createElement('b'); b.className = 'glow'; b.textContent = m.v;
+      var sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = m.s || '';
+      w.appendChild(lab); w.appendChild(b); w.appendChild(sub); money.appendChild(w);
+    });
+    var kpis = document.getElementById('kpis'); kpis.textContent = '';
+    d.kpis.forEach(function(m){
+      var w = document.createElement('div'); w.className = 'kpi';
+      var lab = document.createElement('div'); lab.className = 'label'; lab.textContent = m.l;
+      var b = document.createElement('b'); if (m.hot) b.className = 'glow'; b.textContent = m.v;
+      w.appendChild(lab); w.appendChild(b); kpis.appendChild(w);
+    });
     document.getElementById('coreState').textContent =
       d.attention > 0 ? d.attention + ' ITEM' + (d.attention === 1 ? '' : 'S') + ' NEED YOU'
                       : 'SYSTEMS NOMINAL';
@@ -652,34 +658,85 @@ def jarvis():
 @app.get("/jarvis/data")
 def jarvis_data():
     db = STATE.db
+    cfg = STATE.config
     leads = db.all_leads()
     stages = {}
     for lead in leads:
         stages[lead["stage"]] = stages.get(lead["stage"], 0) + 1
-    active = sum(stages.get(s, 0) for s in (
-        core.STAGE_CONTACTED, core.STAGE_BUILDING_PREVIEW, core.STAGE_PREVIEW_SENT,
-        core.STAGE_SENDING_PAYMENT_LINK, core.STAGE_PAYMENT_LINK_SENT,
-        core.STAGE_PAID, core.STAGE_DEPLOYING_FINAL))
-    contacted_total = sum(1 for lead in leads
-                          if lead["stage"] not in (core.STAGE_FOUND,))
+
+    def st(*names):
+        return sum(stages.get(s, 0) for s in names)
+
+    active = st(core.STAGE_CONTACTED, core.STAGE_BUILDING_PREVIEW,
+                core.STAGE_PREVIEW_SENT, core.STAGE_SENDING_PAYMENT_LINK,
+                core.STAGE_PAYMENT_LINK_SENT, core.STAGE_PAID,
+                core.STAGE_DEPLOYING_FINAL)
+    # "interested" = made it past the cold email, into preview or beyond
+    interested = st(core.STAGE_BUILDING_PREVIEW, core.STAGE_PREVIEW_SENT,
+                    core.STAGE_SENDING_PAYMENT_LINK, core.STAGE_PAYMENT_LINK_SENT,
+                    core.STAGE_PAID, core.STAGE_DEPLOYING_FINAL,
+                    core.STAGE_DELIVERED)
     paid_count = sum(1 for lead in leads if lead["paid_at"])
+    delivered = stages.get(core.STAGE_DELIVERED, 0)
+
+    ev = db.event_counts()
+    outreach = ev.get("outreach_sent", 0)
+    replies = ev.get("reply_received", 0)
+    replied_leads = db.distinct_replied_leads()
+    previews = ev.get("preview_emailed", 0)
+    links = ev.get("payment_link_emailed", 0)
+    emails_total = (outreach + previews + links + ev.get("delivered", 0)
+                    + ev.get("reply_after_link", 0))
+    response_rate = min(100, round(100 * replied_leads / outreach)) if outreach else 0
+    conversion = min(100, round(100 * paid_count / outreach)) if outreach else 0
+
+    revenue = db.revenue_cents() // 100
+    pending = db.pending_cents() // 100
+    price = float(cfg.get("site_price_usd", 500) or 0)
+    pipeline_value = int(active * price)
+    avg_deal = revenue // paid_count if paid_count else 0
+
+    def usd(n):
+        return "$" + f"{n:,}"
+
+    money = [
+        {"l": "Revenue collected", "v": usd(revenue),
+         "s": f"{paid_count} paid project" + ("" if paid_count == 1 else "s")},
+        {"l": "Awaiting payment", "v": usd(pending),
+         "s": f"{stages.get(core.STAGE_PAYMENT_LINK_SENT, 0)} payment links out"},
+        {"l": "Pipeline value", "v": usd(pipeline_value),
+         "s": f"{active} active deals × ${core.fmt_price(price)}"},
+        {"l": "Avg project", "v": usd(avg_deal), "s": "per paid deal"},
+    ]
+    kpis = [
+        {"l": "Leads", "v": len(leads), "hot": True},
+        {"l": "Cold emails", "v": outreach},
+        {"l": "Emails total", "v": emails_total},
+        {"l": "Replies", "v": replies, "hot": True},
+        {"l": "Response rate", "v": f"{response_rate}%"},
+        {"l": "Interested", "v": interested, "hot": True},
+        {"l": "Previews sent", "v": previews},
+        {"l": "Pay links sent", "v": links},
+        {"l": "Deals won", "v": paid_count, "hot": True},
+        {"l": "Conversion", "v": f"{conversion}%"},
+        {"l": "Sites live", "v": delivered},
+        {"l": "Passed", "v": stages.get(core.STAGE_NOT_INTERESTED, 0)},
+        {"l": "Searches run", "v": ev.get("find_leads", 0)},
+    ]
+
     events = []
-    for ev in db.recent_events(14):
+    for e in db.recent_events(12):
         events.append({
-            "time": (ev["created_at"] or "")[11:19] or "--:--:--",
-            "kind": ev["kind"],
-            "detail": (ev["detail"] or "")[:160],
+            "time": (e["created_at"] or "")[11:19] or "--:--:--",
+            "kind": e["kind"],
+            "detail": (e["detail"] or "")[:160],
         })
     return {
-        "owner": (STATE.config.get("your_name") or "").split(" ")[0] or None,
-        "autopilot": bool(STATE.config.get("autopilot_enabled")),
-        "revenue": db.revenue_cents() // 100,
-        "paid_count": paid_count,
-        "total_leads": len(leads),
-        "contacted_total": contacted_total,
-        "active_deals": active,
-        "delivered": stages.get(core.STAGE_DELIVERED, 0),
+        "owner": (cfg.get("your_name") or "").split(" ")[0] or None,
+        "autopilot": bool(cfg.get("autopilot_enabled")),
         "attention": len(db.attention_events()),
+        "money": money,
+        "kpis": kpis,
         "stages": {s: stages[s] for s in core.ALL_STAGES if s in stages},
         "events": events,
     }
