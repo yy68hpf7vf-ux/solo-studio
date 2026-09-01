@@ -74,6 +74,8 @@ if [ ! -x "$VENV/bin/python3" ] || ! "$VENV/bin/python3" -c 'import flask, reque
         rm -rf "$VENV"
         exit 1
     fi
+    # Optional extra: QR codes on the Setup page for phone pairing. Never fatal.
+    "$VENV/bin/python3" -m pip install --prefer-binary qrcode >> "$PIPLOG" 2>&1 || true
     notify "Setup finished — opening your dashboard."
 fi
 

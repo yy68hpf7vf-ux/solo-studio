@@ -69,6 +69,24 @@ Everything is stored on your Mac in
 database). No keys ever leave your machine except to call the services they
 belong to.
 
+## Putting it on your phone
+
+Solo Studio installs on your phone as a home-screen app — no App Store needed.
+The Mac app is the engine, so it must be open for the phone to see anything.
+
+1. On the Mac, open **Setup** → tick **"Let my phone open this dashboard"**,
+   set a 4–8 digit PIN, click **Save settings**.
+2. **Quit and reopen Solo Studio** (this is what switches on phone access).
+3. Back on the Setup page, a **QR code** appears. Point your phone's camera at
+   it and tap the link, then enter your PIN.
+4. Tap **Share → Add to Home Screen**. You now have a Solo Studio icon.
+
+**Notifications (works anywhere, not just at home):** tick **"Push
+notifications to my phone"** on Setup and Save. Install the free **ntfy** app,
+tap **+**, and subscribe to the topic name Setup shows you. Your phone then
+buzzes for replies, previews, payment links, payments, and deliveries. Use
+**"Send a test notification"** to confirm it works.
+
 ## Day-to-day use
 
 - **Find new leads:** type a search like `plumbers in Riverside, CA`.

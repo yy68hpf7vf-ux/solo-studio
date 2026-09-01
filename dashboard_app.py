@@ -62,6 +62,31 @@ PWA_META = (
 )
 
 
+def qr_svg(data: str, px: int = 190) -> str:
+    """Inline SVG QR code for `data`, or "" if the qrcode library is absent
+    (optional dependency — the URL is always shown as text as well)."""
+    try:
+        import qrcode
+    except ImportError:
+        return ""
+    try:
+        q = qrcode.QRCode(box_size=1, border=2)
+        q.add_data(data)
+        q.make(fit=True)
+        matrix = q.get_matrix()
+    except Exception:
+        return ""
+    n = len(matrix)
+    rects = "".join(
+        f'<rect x="{x}" y="{y}" width="1" height="1"/>'
+        for y, row in enumerate(matrix) for x, cell in enumerate(row) if cell)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{px}" height="{px}" '
+            f'viewBox="0 0 {n} {n}" shape-rendering="crispEdges" '
+            f'style="background:#fff;border-radius:8px">'
+            f'<rect width="{n}" height="{n}" fill="#fff"/>'
+            f'<g fill="#101826">{rects}</g></svg>')
+
+
 def lan_ip() -> str:
     """This machine's address on the local network (best effort)."""
     try:
@@ -426,10 +451,20 @@ keep the saved value.</p>
 <label>PIN for phone access (4–8 digits)</label>
 <input type="text" name="phone_pin" value="{{ config.phone_pin }}" inputmode="numeric">
 {% if config.phone_access_enabled and config.phone_pin %}
-<p class="muted">On your phone's browser go to: <code>http://{{ lan_ip }}:8747</code><br>
-Then tap Share → <b>Add to Home Screen</b> for an app icon.
-Quit and reopen Solo Studio after changing this.</p>
-{% else %}<p class="muted">Turn on + set a PIN, save, then quit and reopen Solo Studio.</p>{% endif %}
+<div style="display:flex;gap:14px;align-items:flex-start;margin-top:10px">
+  <div>{{ phone_qr|safe }}</div>
+  <div class="muted">
+    <b>Point your phone camera at this code.</b><br>
+    Tap the link it offers, enter your PIN, then tap
+    <b>Share&nbsp;→ Add to Home Screen</b> for an app icon.<br><br>
+    Or type it in your phone's browser:<br>
+    <code style="font-size:15px">http://{{ lan_ip }}:8747</code><br><br>
+    Phone must be on the same Wi-Fi, and Solo Studio must be open on this Mac.
+    Quit and reopen Solo Studio after turning this on.
+  </div>
+</div>
+{% else %}<p class="muted">Tick the box, set a PIN, click Save — then quit and reopen
+Solo Studio. A QR code will appear here to set up your phone.</p>{% endif %}
 </div>
 <div>
 <label><input type="checkbox" name="ntfy_enabled" value="1"
@@ -1062,7 +1097,9 @@ def setup():
         STATE.reload()
         flash("Settings saved.", "ok")
         return redirect(url_for("setup"))
-    return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=lan_ip())
+    ip = lan_ip()
+    return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=ip,
+                   phone_qr=qr_svg(f"http://{ip}:{PORT}/"))
 
 
 @app.get("/setup/test_notification")
