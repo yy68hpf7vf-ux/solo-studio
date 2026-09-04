@@ -95,18 +95,24 @@ Mac is on. To have it run around the clock — replying to leads and delivering
 paid sites at 3am while your laptop is shut — deploy it to a small server.
 Cost is about **$7/month**. You do this once, in a browser.
 
-1. Make a free account at [render.com](https://render.com) and connect your
-   GitHub.
-2. Click **New → Blueprint**, pick this repository. Render reads
-   `render.yaml` and fills in everything for you.
-3. It asks for one value: **SOLO_STUDIO_PASSWORD**. Invent a strong password
-   (10+ characters) — this is what stops strangers reaching your dashboard.
-   Save it in your password manager.
-4. Click **Apply** and wait a few minutes. You get a web address like
-   `https://solo-studio-xxxx.onrender.com`.
-5. Open that address, sign in with your password, and fill in the **Setup**
-   page with your API keys exactly as you would on the Mac. Turn on
-   **autopilot**.
+**One-click start:**
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/yy68hpf7vf-ux/solo-studio)
+
+1. That link asks you to sign in to Render (free account) and connect GitHub.
+2. Render reads `render.yaml` and fills in everything itself — runtime, start
+   command, storage disk, health check.
+3. It asks you for one value: **SOLO_STUDIO_PASSWORD**. Invent a strong
+   password (10+ characters) — this is what stops strangers reaching your
+   dashboard. Save it in your password manager.
+4. Confirm the plan (Starter, ~$7/month — needed for the storage disk) and
+   click **Apply**. Wait a few minutes for the first build.
+5. You get a web address like `https://solo-studio-xxxx.onrender.com`. Open
+   it, sign in with your password, and fill in the **Setup** page with your
+   API keys right there in the browser. Turn on **autopilot**.
+
+You never have to touch the Mac app again if you don't want to — the live
+site is the whole thing, and your phone can install it from that same
+address.
 
 That's it — the pipeline now runs on the server. Open the same web address on
 your phone and tap **Share → Add to Home Screen** for an app icon that works

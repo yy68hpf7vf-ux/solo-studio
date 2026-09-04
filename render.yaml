@@ -8,6 +8,8 @@ services:
     name: solo-studio
     runtime: python
     plan: starter          # persistent disks require a paid instance
+    # This repo's code lives on the working branch, not "main".
+    branch: claude/solo-studio-pipeline-7r9508
     buildCommand: pip install -r requirements.txt
     # One worker: the pipeline's background loop must not run in duplicate.
     startCommand: gunicorn --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT dashboard_app:app
