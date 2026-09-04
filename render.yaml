@@ -1,0 +1,25 @@
+# Solo Studio — always-on deployment (render.com)
+#
+# The dashboard's Setup page still holds every API key; the only value set
+# here is the password that guards the site. A persistent disk keeps the
+# leads database and config.json safe across restarts and redeploys.
+services:
+  - type: web
+    name: solo-studio
+    runtime: python
+    plan: starter          # persistent disks require a paid instance
+    buildCommand: pip install -r requirements.txt
+    # One worker: the pipeline's background loop must not run in duplicate.
+    startCommand: gunicorn --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT dashboard_app:app
+    healthCheckPath: /health
+    envVars:
+      - key: SOLO_STUDIO_HOME     # config.json + database live on the disk
+        value: /var/data
+      - key: SOLO_STUDIO_PASSWORD # set this yourself in the Render dashboard
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.13.4"
+    disk:
+      name: solo-studio-data
+      mountPath: /var/data
+      sizeGB: 1

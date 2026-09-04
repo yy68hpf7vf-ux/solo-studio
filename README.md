@@ -87,6 +87,44 @@ tap **+**, and subscribe to the topic name Setup shows you. Your phone then
 buzzes for replies, previews, payment links, payments, and deliveries. Use
 **"Send a test notification"** to confirm it works.
 
+## Running it 24/7 in the cloud (optional)
+
+By default Solo Studio runs on your Mac, which means it only works while your
+Mac is on. To have it run around the clock — replying to leads and delivering
+paid sites at 3am while your laptop is shut — deploy it to a small server.
+Cost is about **$7/month**. You do this once, in a browser.
+
+1. Make a free account at [render.com](https://render.com) and connect your
+   GitHub.
+2. Click **New → Blueprint**, pick this repository. Render reads
+   `render.yaml` and fills in everything for you.
+3. It asks for one value: **SOLO_STUDIO_PASSWORD**. Invent a strong password
+   (10+ characters) — this is what stops strangers reaching your dashboard.
+   Save it in your password manager.
+4. Click **Apply** and wait a few minutes. You get a web address like
+   `https://solo-studio-xxxx.onrender.com`.
+5. Open that address, sign in with your password, and fill in the **Setup**
+   page with your API keys exactly as you would on the Mac. Turn on
+   **autopilot**.
+
+That's it — the pipeline now runs on the server. Open the same web address on
+your phone and tap **Share → Add to Home Screen** for an app icon that works
+from anywhere, on any network.
+
+**Notes worth knowing**
+
+- Your API keys live on the server, entered through Setup over HTTPS. The
+  site is password-protected, sign-in attempts are rate-limited, and a
+  password shorter than 10 characters locks everyone out rather than running
+  insecurely.
+- The paid plan matters: the **persistent disk** in `render.yaml` is what
+  keeps your leads database safe across restarts. A free instance would lose
+  it and also fall asleep.
+- Keep exactly **one** copy running (cloud *or* Mac, not both against the same
+  mailbox), so two pipelines don't answer the same lead.
+- Any host that runs a Python web app with a persistent disk works the same
+  way; Render is just the least fiddly.
+
 ## Day-to-day use
 
 - **Find new leads:** type a search like `plumbers in Riverside, CA`.
