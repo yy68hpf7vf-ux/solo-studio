@@ -139,7 +139,7 @@ DEFAULT_CONFIG = {
     ),
     # Behavior.
     "autopilot_enabled": False,   # background processing of replies/payments
-    "poll_interval_seconds": 120,
+    "poll_interval_seconds": 60,
     # Automatic prospecting: the agent runs these searches on a schedule and
     # queues what it finds for your approval. It never emails anyone on its own.
     "auto_search_enabled": False,

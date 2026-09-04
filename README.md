@@ -156,8 +156,13 @@ the deal.**
 - **Daily cap:** Setup limits how many cold emails go out per day (20 by
   default). A brand-new mailbox that blasts hundreds a day gets flagged as
   spam, which kills your delivery rate. Slow beats blocked.
-- **Autopilot:** with it on, the app checks replies and payments every couple
-  of minutes and drives every conversation to done. Anything ambiguous
+- **Live screens:** every page updates itself — JARVIS refreshes every few
+  seconds, and the Dashboard/Approve/Activity pages notice new leads, replies
+  and payments within about six seconds and refresh on their own. If you're
+  part-way through typing, they don't yank the page out from under you: a
+  "New activity — tap to refresh" pill appears instead.
+- **Autopilot:** with it on, the app checks replies and payments every minute
+  and drives every conversation to done. Anything ambiguous
   (questions, change requests, unknown senders) is parked in **Needs your
   attention** instead of guessing.
 

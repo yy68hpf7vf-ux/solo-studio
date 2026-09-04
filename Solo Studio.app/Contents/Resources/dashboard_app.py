@@ -140,7 +140,8 @@ def _is_local_request() -> bool:
 
 # Endpoints reachable without authentication (icons/manifest so the phone can
 # install the app, health so the host can check the server is alive).
-OPEN_ENDPOINTS = ("pin", "login", "manifest", "icon_png", "health")
+OPEN_ENDPOINTS = ("pin", "login", "manifest", "icon_png", "favicon",
+                  "health")
 
 # Simple brute-force throttle: {ip: [failure timestamps]}
 _failures: dict[str, list[float]] = defaultdict(list)
@@ -313,6 +314,10 @@ label{display:block;font-weight:600;font-size:13px;margin:12px 0 4px}
 .stat span{font-size:12px;color:var(--mut)}
 code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
 .tablewrap{overflow-x:auto}
+#live-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;
+  background:#101826;color:#fff;padding:10px 18px;border-radius:999px;
+  font-size:14px;font-weight:600;cursor:pointer;z-index:50;
+  box-shadow:0 4px 16px rgba(0,0,0,.28)}
 @media (max-width:800px){
   .grid{grid-template-columns:1fr}
   header{padding:10px 14px;gap:14px;flex-wrap:wrap;font-size:14px}
@@ -347,6 +352,47 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
 {% endwith %}
 {% block body %}{% endblock %}
 </main>
+<div id="live-pill" hidden>New activity — tap to refresh</div>
+<span id="live-stamp" hidden data-stamp="{{ live_stamp }}"></span>
+<script>
+/* Keeps ordinary pages current without throwing away anything you're typing:
+   reloads on its own when idle, otherwise offers a tap-to-refresh pill. */
+(function () {
+  var stampEl = document.getElementById('live-stamp');
+  var seen = stampEl ? stampEl.dataset.stamp : null;
+  var pill = document.getElementById('live-pill');
+  pill.onclick = function () { location.reload(); };
+
+  function busy() {
+    var el = document.activeElement;
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+    var fields = document.querySelectorAll('input[type=text], input[type=email], textarea');
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].value && fields[i].value !== fields[i].defaultValue) return true;
+    }
+    return false;
+  }
+
+  function poll() {
+    if (document.hidden) return;
+    fetch('/live', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;                       /* signed out or offline */
+        var stamp = d.last_event + ':' + d.pending + ':' + d.attention;
+        if (!seen) { seen = stamp; return; }   /* no baseline: adopt this one */
+        if (stamp === seen) return;
+        if (busy()) { pill.hidden = false; }  /* don't wipe what you typed */
+        else { location.reload(); }
+      })
+      .catch(function () {});
+  }
+  setInterval(poll, 6000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) poll();
+  });
+})();
+</script>
 </body></html>
 """
 
@@ -677,8 +723,13 @@ def _inject():
         pending = len(STATE.db.leads_awaiting_approval())
     except Exception:
         pending = 0
+    try:
+        stamp = _live_stamp()
+    except Exception:
+        stamp = ""
     return {"config": STATE.config, "pwa_meta": PWA_META,
-            "cloud_mode": CLOUD_MODE, "pending_count": pending}
+            "cloud_mode": CLOUD_MODE, "pending_count": pending,
+            "live_stamp": stamp}
 
 
 def _render(tpl, **ctx):
@@ -931,6 +982,27 @@ def health():
     return {"app": HEALTH_MARKER}
 
 
+def _live_snapshot() -> dict:
+    db = STATE.db
+    latest = db.recent_events(1)
+    return {
+        "pending": len(db.leads_awaiting_approval()),
+        "attention": len(db.attention_events()),
+        "last_event": latest[0]["id"] if latest else 0,
+    }
+
+
+def _live_stamp(snap: dict | None = None) -> str:
+    s = snap or _live_snapshot()
+    return f"{s['last_event']}:{s['pending']}:{s['attention']}"
+
+
+@app.get("/live")
+def live():
+    """Tiny snapshot the ordinary pages poll so they stay current."""
+    return _live_snapshot()
+
+
 @app.get("/manifest.webmanifest")
 def manifest():
     return {
@@ -942,6 +1014,12 @@ def manifest():
             {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
         ],
     }, 200, {"Content-Type": "application/manifest+json"}
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return ICON_192, 200, {"Content-Type": "image/png",
+                           "Cache-Control": "public, max-age=86400"}
 
 
 @app.get("/icon-<int:size>.png")

@@ -71,6 +71,19 @@ class PhoneGateTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data[:4], b"\x89PNG")
 
+    def test_live_snapshot_shape(self):
+        self._set(phone_access_enabled=False, phone_pin="")
+        r = self.client.get("/live", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        self.assertEqual(r.status_code, 200)
+        for key in ("pending", "attention", "last_event"):
+            self.assertIn(key, r.json)
+
+    def test_live_requires_auth_from_other_devices(self):
+        self._set(phone_access_enabled=True, phone_pin="2468")
+        with self.client.session_transaction() as s:
+            s.clear()
+        self.assertEqual(self.remote("get", "/live").status_code, 302)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
