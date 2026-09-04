@@ -112,7 +112,9 @@ class FakeServices:
         self.bodies[uuid_] = body
 
 
-class PipelineTest(unittest.TestCase):
+class PipelineFixture(unittest.TestCase):
+    """Shared setup: temp data dir, fresh database, fake services."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="solo-studio-test-")
         os.environ["SOLO_STUDIO_HOME"] = self.tmp
@@ -143,8 +145,8 @@ class PipelineTest(unittest.TestCase):
     def stage(self, lead_id):
         return self.db.get_lead(lead_id)["stage"]
 
-    # -- tests -------------------------------------------------------------
 
+class PipelineTest(PipelineFixture):
     def test_happy_path_end_to_end(self):
         lead = self.make_contacted_lead()
         lid = lead["id"]
@@ -478,7 +480,7 @@ class ConcurrencyTest(unittest.TestCase):
         self.assertEqual(len(wins), 1)
 
 
-class NotificationTest(PipelineTest):
+class NotificationTest(PipelineFixture):
     def test_payment_sends_phone_notification(self):
         notes = []
         self.svc.push_notify = (
@@ -505,3 +507,87 @@ class NotificationTest(PipelineTest):
         self.svc.add_reply("m1", lead["thread_id"], "joe@example.com", "yes")
         self.agent.process_replies()
         self.assertEqual(self.stage(lead["id"]), core.STAGE_PREVIEW_SENT)
+
+
+class ApprovalQueueTest(PipelineFixture):
+    """Discovery is automatic; sending is not. That boundary must hold."""
+
+    def test_auto_search_never_sends_email(self):
+        self.config.update(auto_search_enabled=True,
+                           saved_searches="plumbers in Riverside")
+        r = self.agent.run_saved_searches()
+        self.assertEqual(r["added"], 1)
+        self.assertEqual(self.svc.sent_emails, [])          # nothing sent
+        self.assertEqual(self.stage(self.db.all_leads()[0]["id"]),
+                         core.STAGE_FOUND)                   # parked for approval
+
+    def test_auto_search_respects_interval(self):
+        self.config.update(auto_search_enabled=True, saved_searches="plumbers",
+                           search_interval_hours=12)
+        self.assertEqual(self.agent.run_saved_searches()["added"], 1)
+        again = self.agent.run_saved_searches()
+        self.assertEqual(again.get("skipped"), "not due yet")
+
+    def test_auto_search_off_by_default(self):
+        self.config["saved_searches"] = "plumbers"
+        self.assertEqual(self.agent.run_saved_searches().get("skipped"),
+                         "auto search off")
+
+    def test_queue_splits_by_email_presence(self):
+        self.agent.find_leads("plumbers")
+        lid = self.db.all_leads()[0]["id"]
+        self.assertEqual(len(self.db.leads_needing_email()), 1)
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 0)
+        self.agent.set_email(lid, "joe@example.com")
+        self.assertEqual(len(self.db.leads_needing_email()), 0)
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 1)
+
+    def test_approving_removes_from_queue(self):
+        self.agent.find_leads("plumbers")
+        lid = self.db.all_leads()[0]["id"]
+        self.agent.set_email(lid, "joe@example.com")
+        self.assertTrue(self.agent.send_outreach(lid)["ok"])
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 0)
+        self.assertEqual(len(self.svc.sent_emails), 1)
+
+    def test_rendered_email_matches_what_is_sent(self):
+        """The approval screen must show the real text, not an approximation."""
+        self.agent.find_leads("plumbers")
+        lead = self.db.all_leads()[0]
+        self.agent.set_email(lead["id"], "joe@example.com")
+        preview = self.agent.render_outreach(self.db.get_lead(lead["id"]))
+        self.agent.send_outreach(lead["id"])
+        sent = self.svc.sent_emails[0]
+        self.assertEqual(preview["subject"], sent["subject"])
+        self.assertEqual(preview["body"], sent["body_text"])
+
+    def test_daily_cap_blocks_further_sends(self):
+        self.config["daily_send_cap"] = 2
+        for i in range(4):
+            self.db.add_lead(place_id=f"p{i}", name=f"Biz {i}", address=None,
+                             phone=None, category=None, email=f"b{i}@example.com")
+        results = [self.agent.send_outreach(l["id"])
+                   for l in self.db.leads_awaiting_approval()]
+        self.assertEqual(sum(1 for r in results if r["ok"]), 2)
+        self.assertIn("Daily limit", [r for r in results if not r["ok"]][0]["error"])
+        self.assertEqual(len(self.svc.sent_emails), 2)
+        # The rest stay queued rather than being lost.
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 2)
+
+    def test_do_not_contact_never_enters_queue(self):
+        self.agent.find_leads("plumbers")
+        lid = self.db.all_leads()[0]["id"]
+        self.agent.set_email(lid, "joe@example.com")
+        self.db.update_lead(lid, do_not_contact=1)
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 0)
+
+    def test_bad_template_reported_not_sent(self):
+        self.config["outreach_body"] = "Hi {not_a_real_placeholder}"
+        self.agent.find_leads("plumbers")
+        lid = self.db.all_leads()[0]["id"]
+        self.agent.set_email(lid, "joe@example.com")
+        r = self.agent.send_outreach(lid)
+        self.assertFalse(r["ok"])
+        self.assertIn("placeholder", r["error"])
+        self.assertEqual(self.svc.sent_emails, [])
+        self.assertEqual(self.stage(lid), core.STAGE_FOUND)  # still queued

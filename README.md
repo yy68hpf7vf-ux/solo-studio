@@ -22,8 +22,9 @@ An automated lead-gen + sales pipeline for a one-person web design studio.
 - Every pipeline step is guarded so duplicate replies, double-clicks, or
   overlapping background checks can't send double emails, create a second
   payment link, or deliver twice.
-- Cold emails only ever go out when **you** click "Send cold email" — the
-  background autopilot handles replies and payments, never new outreach.
+- Cold emails only ever go out after **you approve them** on the Approve page,
+  where you see the exact wording first — the background loop finds leads and
+  handles replies and payments, but never sends outreach on its own.
 - Anyone who replies "unsubscribe" is flagged and never emailed again, and the
   cold-email template includes your mailing address and an opt-out line
   (both required by US law for commercial email — see "Legal" below).
@@ -127,17 +128,38 @@ from anywhere, on any network.
 
 ## Day-to-day use
 
-- **Find new leads:** type a search like `plumbers in Riverside, CA`.
-  Only businesses *without* a website are kept.
-- **Add emails:** Google doesn't publish business email addresses, so each
-  new lead has an empty email box — look the address up (Yelp, Facebook, a
-  quick call) and save it. Outreach can't go out without it.
-- **Send cold email:** per-lead button, with a confirmation. Always manual.
-- **Autopilot:** turn it on and the app checks for replies and payments every
-  couple of minutes *while the app is open*, moving leads through preview →
-  payment link → delivery automatically. Anything ambiguous (questions,
-  change requests, unknown senders) is parked in **Needs your attention**
-  instead of guessing.
+**What runs by itself, and what needs you:**
+
+| Step | Who does it |
+|---|---|
+| Finding businesses with no website | **Automatic** (saved searches on a schedule) |
+| Getting their email address | **You** — Google doesn't publish it |
+| Sending the cold email | **You approve it**, then it sends |
+| Reading replies, judging interest | Automatic |
+| Designing + deploying the preview site | Automatic |
+| Sending the payment link | Automatic |
+| Watching Stripe for payment | Automatic |
+| Delivering the paid, watermark-free site | Automatic |
+
+So the loop is: **find → you add an email → you approve → the machine closes
+the deal.**
+
+- **Automatic lead hunting:** on the Setup page, list the searches you want
+  (one per line, e.g. `plumbers in Riverside, CA`) and tick *Search for new
+  leads automatically*. New no-website businesses are added on a schedule and
+  your phone buzzes to tell you.
+- **The Approve page:** every found business waits here. You see the exact
+  email that would go out, word for word, and tap **Approve & send** (or
+  *Approve & send all*). Nothing is ever emailed without that tap. Businesses
+  still missing an email address are listed underneath with a box to paste
+  one in — that's the one job only you can do.
+- **Daily cap:** Setup limits how many cold emails go out per day (20 by
+  default). A brand-new mailbox that blasts hundreds a day gets flagged as
+  spam, which kills your delivery rate. Slow beats blocked.
+- **Autopilot:** with it on, the app checks replies and payments every couple
+  of minutes and drives every conversation to done. Anything ambiguous
+  (questions, change requests, unknown senders) is parked in **Needs your
+  attention** instead of guessing.
 
 ## Legal (worth 60 seconds)
 

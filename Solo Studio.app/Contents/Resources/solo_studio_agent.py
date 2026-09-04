@@ -140,6 +140,12 @@ DEFAULT_CONFIG = {
     # Behavior.
     "autopilot_enabled": False,   # background processing of replies/payments
     "poll_interval_seconds": 120,
+    # Automatic prospecting: the agent runs these searches on a schedule and
+    # queues what it finds for your approval. It never emails anyone on its own.
+    "auto_search_enabled": False,
+    "saved_searches": "",         # one search per line
+    "search_interval_hours": 12,
+    "daily_send_cap": 20,         # max approved cold emails sent per day
     # Phone access (dashboard reachable from your phone on the same Wi-Fi).
     "phone_access_enabled": False,
     "phone_pin": "",
@@ -277,6 +283,27 @@ class Database:
         """How many times each event kind has happened, ever."""
         return {row["kind"]: row["n"] for row in self._conn().execute(
             "SELECT kind, COUNT(*) AS n FROM events GROUP BY kind")}
+
+    def sends_today(self) -> int:
+        """Cold emails sent since midnight UTC (for the daily cap)."""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        row = self._conn().execute(
+            "SELECT COUNT(*) AS n FROM events WHERE kind='outreach_sent'"
+            " AND created_at >= ?", (today,)).fetchone()
+        return int(row["n"] or 0)
+
+    def leads_awaiting_approval(self) -> list[sqlite3.Row]:
+        """Found leads with an email, ready for you to approve."""
+        return self._conn().execute(
+            "SELECT * FROM leads WHERE stage=? AND do_not_contact=0"
+            " AND email IS NOT NULL AND email<>'' ORDER BY created_at",
+            (STAGE_FOUND,)).fetchall()
+
+    def leads_needing_email(self) -> list[sqlite3.Row]:
+        return self._conn().execute(
+            "SELECT * FROM leads WHERE stage=? AND do_not_contact=0"
+            " AND (email IS NULL OR email='') ORDER BY created_at",
+            (STAGE_FOUND,)).fetchall()
 
     def distinct_replied_leads(self) -> int:
         row = self._conn().execute(
@@ -890,17 +917,9 @@ class Agent:
 
     # -- outreach ----------------------------------------------------------
 
-    def send_outreach(self, lead_id: int) -> dict:
-        lead = self.db.get_lead(lead_id)
-        if lead is None:
-            return {"ok": False, "error": "No such lead."}
-        if lead["do_not_contact"]:
-            return {"ok": False, "error": "Lead is flagged do-not-contact."}
-        if not lead["email"]:
-            return {"ok": False, "error": "Lead has no email address yet."}
-        # Claim so a double-clicked button can't send two cold emails.
-        if not self.db.claim(lead_id, [STAGE_FOUND], STAGE_CONTACTED):
-            return {"ok": False, "error": "Lead is not in 'found' stage."}
+    def render_outreach(self, lead) -> dict:
+        """The exact subject/body that would be sent — used by the approval
+        screen so nothing goes out unseen."""
         cfg = self.config
         fmt = {
             "lead_name": lead["name"],
@@ -910,10 +929,39 @@ class Agent:
             "mailing_address": cfg.get("mailing_address") or "",
         }
         try:
-            subject = cfg.get("outreach_subject", "").format(**fmt) or f"A website for {lead['name']}"
+            subject = (cfg.get("outreach_subject", "").format(**fmt)
+                       or f"A website for {lead['name']}")
             body = cfg.get("outreach_body", "").format(**fmt)
-            sent = self.services.email_send(to=lead["email"], subject=subject,
-                                            body_text=body)
+        except (KeyError, IndexError, ValueError) as e:
+            return {"ok": False,
+                    "error": f"Your email template has a bad placeholder: {e}. "
+                             "Fix it on the Setup page."}
+        return {"ok": True, "subject": subject, "body": body}
+
+    def send_outreach(self, lead_id: int) -> dict:
+        lead = self.db.get_lead(lead_id)
+        if lead is None:
+            return {"ok": False, "error": "No such lead."}
+        if lead["do_not_contact"]:
+            return {"ok": False, "error": "Lead is flagged do-not-contact."}
+        if not lead["email"]:
+            return {"ok": False, "error": "Lead has no email address yet."}
+        cap = int(self.config.get("daily_send_cap", 20) or 0)
+        if cap and self.db.sends_today() >= cap:
+            return {"ok": False,
+                    "error": f"Daily limit reached ({cap} cold emails today). "
+                             "This protects your sending reputation — the rest "
+                             "stay queued for tomorrow."}
+        rendered = self.render_outreach(lead)
+        if not rendered["ok"]:
+            return rendered
+        # Claim so a double-clicked button can't send two cold emails.
+        if not self.db.claim(lead_id, [STAGE_FOUND], STAGE_CONTACTED):
+            return {"ok": False, "error": "Lead is not in 'found' stage."}
+        try:
+            sent = self.services.email_send(to=lead["email"],
+                                            subject=rendered["subject"],
+                                            body_text=rendered["body"])
         except Exception as e:
             # Roll back so the lead can be retried.
             self.db.claim(lead_id, [STAGE_CONTACTED], STAGE_FOUND)
@@ -1371,6 +1419,46 @@ class Agent:
 
     # -- background tick ---------------------------------------------------
 
+    def run_saved_searches(self, force: bool = False) -> dict:
+        """Run the saved searches if they're due, queuing what's found for
+        approval. Never emails anyone — discovery only."""
+        cfg = self.config
+        if not force and not cfg.get("auto_search_enabled"):
+            return {"ok": True, "skipped": "auto search off"}
+        queries = [q.strip() for q in (cfg.get("saved_searches") or "").splitlines()
+                   if q.strip()]
+        if not queries:
+            return {"ok": True, "skipped": "no saved searches"}
+        interval = max(1, int(cfg.get("search_interval_hours", 12) or 12)) * 3600
+        last = self.db.get_kv("last_auto_search")
+        if not force and last:
+            try:
+                elapsed = (datetime.now(timezone.utc)
+                           - datetime.fromisoformat(last)).total_seconds()
+                if elapsed < interval:
+                    return {"ok": True, "skipped": "not due yet"}
+            except ValueError:
+                pass
+        self.db.set_kv("last_auto_search", _now())
+        added = 0
+        for query in queries:
+            try:
+                added += self.find_leads(query)["added"]
+            except Exception as e:
+                self.db.log(None, "auto_search_failed",
+                            f"Search {query!r} failed: {e}"[:400])
+        if added:
+            waiting = len(self.db.leads_awaiting_approval())
+            need_email = len(self.db.leads_needing_email())
+            self.db.log(None, "auto_search",
+                        f"Automatic search added {added} new leads "
+                        f"({waiting} ready to approve, {need_email} need an "
+                        "email address).")
+            self._notify(f"{added} new leads found",
+                         f"{waiting} ready for your approval, {need_email} still "
+                         "need an email address.", tags="mag")
+        return {"ok": True, "added": added}
+
     def tick_transients(self) -> None:
         """Resume any lead parked in a transient stage (e.g. after a crash or
         a failed attempt). Each _advance_* step is idempotent."""
@@ -1382,8 +1470,10 @@ class Agent:
             self._advance_delivery(lead["id"])
 
     def tick(self) -> None:
-        """One background iteration: replies, payments, stuck transient stages.
-        Never initiates cold outreach — that is always a human action."""
+        """One background iteration: replies, payments, stuck transient stages,
+        and scheduled lead discovery. Never sends cold outreach — that always
+        waits for your approval."""
         self.process_replies()
         self.poll_payments()
         self.tick_transients()
+        self.run_saved_searches()

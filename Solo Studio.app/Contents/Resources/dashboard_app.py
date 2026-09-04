@@ -313,12 +313,27 @@ label{display:block;font-weight:600;font-size:13px;margin:12px 0 4px}
 .stat span{font-size:12px;color:var(--mut)}
 code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
 .tablewrap{overflow-x:auto}
-@media (max-width:800px){.grid{grid-template-columns:1fr}}
+@media (max-width:800px){
+  .grid{grid-template-columns:1fr}
+  header{padding:10px 14px;gap:14px;flex-wrap:wrap;font-size:14px}
+  header .brand{font-size:16px;width:auto}
+  main{margin:14px auto;padding:0 12px}
+  .card{padding:14px 15px}
+  /* Stack the "needs an email" rows instead of squeezing them into columns */
+  table.stack thead{display:none}
+  table.stack tr{display:block;padding:10px 0;border-bottom:1px solid var(--line)}
+  table.stack td{display:block;border:0;padding:2px 0}
+  .btn{padding:9px 14px}
+  input[type=text],input[type=password],input[type=number]{font-size:16px}
+}
 </style></head>
 <body>
 <header>
   <span class="brand">Solo Studio</span>
   <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <a href="{{ url_for('approve_queue') }}">Approve{% if pending_count %}
+    <span style="background:#f59e0b;color:#111;border-radius:999px;padding:1px 7px;
+    font-size:12px;margin-left:3px">{{ pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('setup') }}">Setup</a>
   <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#7dd3fc">◉ JARVIS</a>
@@ -380,7 +395,12 @@ being processed automatically. Turn it on, or use “Check now”.</div>
 </form>
 <p class="muted" style="margin-bottom:0">Google Places doesn’t publish email
 addresses, so new leads need an email added (look them up — Yelp, Facebook,
-phone call) before outreach can go out.</p>
+phone call) before outreach can go out. Found businesses queue up on the
+<a href="{{ url_for('approve_queue') }}">Approve</a> page.</p>
+<div style="margin-top:10px">
+<form class="inline" method="post" action="{{ url_for('run_searches') }}">
+  <button class="btn">Run my saved searches now</button></form>
+</div>
 </div>
 
 <div class="card">
@@ -545,6 +565,28 @@ keep the saved value.</p>
   value="{{ config.poll_interval_seconds }}" min="30" step="10">
 </div>
 </div>
+<h2 style="margin-top:18px">Automatic lead hunting</h2>
+<div class="grid">
+<div>
+<label><input type="checkbox" name="auto_search_enabled" value="1"
+  {% if config.auto_search_enabled %}checked{% endif %}
+  style="width:auto;margin-right:8px">Search for new leads automatically</label>
+<label>Searches to run (one per line)</label>
+<textarea name="saved_searches" style="min-height:90px"
+  placeholder="plumbers in Riverside, CA&#10;barber shops in Riverside, CA&#10;landscapers in Corona, CA">{{ config.saved_searches }}</textarea>
+</div>
+<div>
+<label>How often to search (hours)</label>
+<input type="number" name="search_interval_hours" min="1" max="168"
+  value="{{ config.search_interval_hours }}">
+<label>Max cold emails per day</label>
+<input type="number" name="daily_send_cap" min="1" max="200"
+  value="{{ config.daily_send_cap }}">
+<p class="muted">Found businesses wait on the <b>Approve</b> page — nothing is
+emailed until you approve it. The daily cap protects your sending reputation;
+sending hundreds a day gets a new mailbox flagged as spam.</p>
+</div>
+</div>
 <h2 style="margin-top:18px">Your phone</h2>
 <div class="grid">
 <div>
@@ -631,8 +673,12 @@ app.jinja_env.loader = DictLoader({"base": BASE})
 
 @app.context_processor
 def _inject():
+    try:
+        pending = len(STATE.db.leads_awaiting_approval())
+    except Exception:
+        pending = 0
     return {"config": STATE.config, "pwa_meta": PWA_META,
-            "cloud_mode": CLOUD_MODE}
+            "cloud_mode": CLOUD_MODE, "pending_count": pending}
 
 
 def _render(tpl, **ctx):
@@ -1071,6 +1117,9 @@ def jarvis_data():
         {"l": "Sites live", "v": delivered},
         {"l": "Passed", "v": stages.get(core.STAGE_NOT_INTERESTED, 0)},
         {"l": "Searches run", "v": ev.get("find_leads", 0)},
+        {"l": "Awaiting approval", "v": len(db.leads_awaiting_approval()),
+         "hot": True},
+        {"l": "Need email", "v": len(db.leads_needing_email())},
     ]
 
     events = []
@@ -1104,6 +1153,136 @@ def dashboard():
     return _render(DASHBOARD, leads=leads,
                    stage_counts=[(s, counts[s]) for s in order],
                    attention=db.attention_events(), configured=configured)
+
+
+
+APPROVE_PAGE = """
+{% extends "base" %}{% block body %}
+<div class="card">
+<h1>Approve outreach</h1>
+<p class="muted" style="margin-top:-6px">
+Nothing is emailed until you approve it here.
+Sent today: <b>{{ sent_today }}</b>{% if cap %} of {{ cap }}{% endif %}.
+{% if cap and sent_today >= cap %}
+<span style="color:var(--bad)">Daily limit reached — the rest wait for tomorrow.</span>
+{% endif %}
+</p>
+{% if queue %}
+<form method="post" action="{{ url_for('approve_all') }}"
+  onsubmit="return confirm('Send {{ remaining }} REAL cold emails now?')">
+  <button class="btn btn-primary">Approve &amp; send all {{ remaining }}</button>
+</form>
+{% endif %}
+</div>
+
+{% if not queue and not needs_email %}
+<div class="card"><p class="muted">Nothing waiting. Run a search on the
+dashboard, or turn on automatic searching in Setup and leads will show up here
+by themselves.</p></div>
+{% endif %}
+
+{% for item in queue %}
+<div class="card">
+  <h2 style="margin-bottom:2px">{{ item.lead['name'] }}</h2>
+  <div class="muted">{{ item.lead['category'] or '' }}{% if item.lead['address'] %}
+    · {{ item.lead['address'] }}{% endif %}{% if item.lead['phone'] %}
+    · {{ item.lead['phone'] }}{% endif %}</div>
+  <div class="muted" style="margin:6px 0"><b>To:</b> {{ item.lead['email'] }}</div>
+  {% if item.rendered.ok %}
+  <div style="border:1px solid var(--line);border-radius:8px;padding:12px;
+    background:#fbfcfe;margin:10px 0">
+    <div style="font-weight:600;margin-bottom:6px">{{ item.rendered.subject }}</div>
+    <div style="white-space:pre-wrap;font-size:13.5px;color:#33414f">{{ item.rendered.body }}</div>
+  </div>
+  {% else %}<p style="color:var(--bad)">{{ item.rendered.error }}</p>{% endif %}
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <form class="inline" method="post"
+      action="{{ url_for('approve_lead', lead_id=item.lead['id']) }}">
+      <button class="btn btn-primary">Approve &amp; send</button></form>
+    <form class="inline" method="post"
+      action="{{ url_for('not_interested', lead_id=item.lead['id']) }}">
+      <button class="btn">Skip this one</button></form>
+  </div>
+</div>
+{% endfor %}
+
+{% if needs_email %}
+<div class="card">
+<h2>Need an email address ({{ needs_email|length }})</h2>
+<p class="muted">Google doesn't publish business emails. Look these up (Facebook,
+Yelp, or a quick call) and paste the address — they'll move up to the approval
+list above.</p>
+<div class="tablewrap"><table class="stack"><tbody>
+{% for l in needs_email %}
+<tr>
+  <td><b>{{ l['name'] }}</b><div class="muted">{{ l['category'] or '' }}
+      {% if l['phone'] %}· {{ l['phone'] }}{% endif %}</div></td>
+  <td style="min-width:210px">
+    <form method="post" action="{{ url_for('set_email', lead_id=l['id']) }}"
+      style="display:flex;gap:6px">
+      <input type="text" name="email" placeholder="email@business.com"
+        inputmode="email" autocapitalize="off">
+      <button class="btn btn-sm">Save</button></form></td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+</div>
+{% endif %}
+{% endblock %}
+"""
+
+
+@app.get("/approve")
+def approve_queue():
+    db = STATE.db
+    queue = [{"lead": lead, "rendered": STATE.agent.render_outreach(lead)}
+             for lead in db.leads_awaiting_approval()]
+    cap = int(STATE.config.get("daily_send_cap", 20) or 0)
+    sent_today = db.sends_today()
+    remaining = len(queue)
+    if cap:
+        remaining = max(0, min(remaining, cap - sent_today))
+    return _render(APPROVE_PAGE, queue=queue, needs_email=db.leads_needing_email(),
+                   cap=cap, sent_today=sent_today, remaining=remaining)
+
+
+@app.post("/action/approve/<int:lead_id>")
+def approve_lead(lead_id):
+    _flash_result(STATE.agent.send_outreach(lead_id), "Cold email sent.")
+    return redirect(url_for("approve_queue"))
+
+
+@app.post("/action/approve_all")
+def approve_all():
+    sent, failed, last_error = 0, 0, None
+    for lead in STATE.db.leads_awaiting_approval():
+        result = STATE.agent.send_outreach(lead["id"])
+        if result.get("ok"):
+            sent += 1
+        else:
+            failed += 1
+            last_error = result.get("error")
+            if "Daily limit" in (last_error or ""):
+                break  # stop at the cap rather than failing one by one
+    if sent:
+        flash(f"Sent {sent} cold email{'' if sent == 1 else 's'}."
+              + (f" {failed} not sent: {last_error}" if failed else ""), "ok")
+    else:
+        flash(last_error or "Nothing to send.", "err")
+    return redirect(url_for("approve_queue"))
+
+
+@app.post("/action/run_searches")
+def run_searches():
+    try:
+        r = STATE.agent.run_saved_searches(force=True)
+        if r.get("skipped"):
+            flash(f"Nothing to do — {r['skipped']}. Add searches in Setup.", "err")
+        else:
+            flash(f"Search finished: {r.get('added', 0)} new leads added.", "ok")
+    except Exception as e:
+        flash(str(e), "err")
+    return redirect(url_for("approve_queue"))
 
 
 @app.get("/activity")
@@ -1253,6 +1432,15 @@ def setup():
                                 ("poll_interval_seconds", int, 30)):
             try:
                 cfg[field] = max(lo, cast(request.form.get(field, "")))
+            except (TypeError, ValueError):
+                pass
+        cfg["auto_search_enabled"] = bool(request.form.get("auto_search_enabled"))
+        if "saved_searches" in request.form:
+            cfg["saved_searches"] = request.form.get("saved_searches", "")
+        for field, lo, hi in (("search_interval_hours", 1, 168),
+                              ("daily_send_cap", 1, 200)):
+            try:
+                cfg[field] = max(lo, min(hi, int(request.form.get(field, ""))))
             except (TypeError, ValueError):
                 pass
         cfg["phone_access_enabled"] = bool(request.form.get("phone_access_enabled"))
