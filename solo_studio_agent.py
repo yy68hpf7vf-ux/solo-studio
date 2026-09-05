@@ -143,6 +143,8 @@ DEFAULT_CONFIG = {
     # Automatic prospecting: the agent runs these searches on a schedule and
     # queues what it finds for your approval. It never emails anyone on its own.
     "auto_search_enabled": False,
+    "auto_research_enabled": False,   # let the Researcher hunt missing emails
+    "research_per_tick": 3,           # how many leads to research each round
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
     "daily_send_cap": 20,         # max approved cold emails sent per day
@@ -208,6 +210,10 @@ CREATE TABLE IF NOT EXISTS leads (
     stripe_session_id TEXT,
     stripe_session_url TEXT,
     amount_cents INTEGER,
+    suggested_email TEXT,
+    suggested_email_source TEXT,
+    suggested_email_note TEXT,
+    researched_at TEXT,
     paid_at TEXT,
     delivered_at TEXT,
     attempts INTEGER NOT NULL DEFAULT 0,
@@ -260,7 +266,11 @@ class Database:
         """Add columns introduced after the first release to existing DBs."""
         c = self._conn()
         have = {row["name"] for row in c.execute("PRAGMA table_info(leads)")}
-        for col, decl in (("amount_cents", "INTEGER"),):
+        for col, decl in (("amount_cents", "INTEGER"),
+                          ("suggested_email", "TEXT"),
+                          ("suggested_email_source", "TEXT"),
+                          ("suggested_email_note", "TEXT"),
+                          ("researched_at", "TEXT")):
             if col not in have:
                 with c:
                     c.execute(f"ALTER TABLE leads ADD COLUMN {col} {decl}")
@@ -298,6 +308,15 @@ class Database:
             "SELECT * FROM leads WHERE stage=? AND do_not_contact=0"
             " AND email IS NOT NULL AND email<>'' ORDER BY created_at",
             (STAGE_FOUND,)).fetchall()
+
+    def leads_to_research(self, limit: int = 3) -> list[sqlite3.Row]:
+        """Found leads with no email and no suggestion yet, never researched."""
+        return self._conn().execute(
+            "SELECT * FROM leads WHERE stage=? AND do_not_contact=0"
+            " AND (email IS NULL OR email='')"
+            " AND (suggested_email IS NULL OR suggested_email='')"
+            " AND researched_at IS NULL ORDER BY created_at LIMIT ?",
+            (STAGE_FOUND, limit)).fetchall()
 
     def leads_needing_email(self) -> list[sqlite3.Row]:
         return self._conn().execute(
@@ -709,6 +728,67 @@ class Services:
             if intent in text:
                 return intent
         return "unclear"
+
+    def research_email(self, lead: dict) -> dict:
+        """Look up a business's public contact email using Claude's web search.
+
+        Returns {"found": bool, "email": str, "source": str, "note": str}.
+        Only ever *suggests* — a human confirms before anything is emailed.
+        """
+        client = self._get_anthropic()
+        model = self.config.get("anthropic_model") or "claude-opus-5"
+        who = [f"Business name: {lead['name']}"]
+        if lead.get("address"):
+            who.append(f"Address: {lead['address']}")
+        if lead.get("phone"):
+            who.append(f"Phone: {lead['phone']}")
+        if lead.get("category"):
+            who.append(f"Type: {lead['category']}")
+        prompt = (
+            "Find the public contact email address for this specific local "
+            "business:\n\n" + "\n".join(who) + "\n\n"
+            "It has no website, so check places like its Facebook page, Yelp or "
+            "Google listing, a directory, or a chamber-of-commerce page.\n\n"
+            "Rules:\n"
+            "- Only report an address you actually saw on a page, with the URL.\n"
+            "- It must clearly belong to THIS business (match the address or "
+            "phone number above), not a similarly named one elsewhere.\n"
+            "- Never invent or guess an address, and never construct one from "
+            "the business name. If you can't find one, say so.\n"
+            "- Prefer a direct business address over a generic contact form.\n\n"
+            "Finish your reply with one final line in exactly this format:\n"
+            "RESULT: <email> | <url where you saw it> | <short note>\n"
+            "or, if you could not find one:\n"
+            "RESULT: none | | <short reason>"
+        )
+        try:
+            response = client.messages.create(
+                model=model, max_tokens=8000,
+                output_config={"effort": "low"},
+                tools=[{"type": "web_search_20260209", "name": "web_search",
+                        "max_uses": 5}],
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise ServiceError(f"Email research failed: {e}") from e
+        if response.stop_reason == "refusal":
+            return {"found": False, "note": "Claude declined this lookup."}
+        text = "".join(b.text for b in response.content if b.type == "text")
+        line = ""
+        for candidate in reversed(text.splitlines()):
+            if candidate.strip().upper().startswith("RESULT:"):
+                line = candidate.strip()[len("RESULT:"):].strip()
+                break
+        if not line:
+            return {"found": False, "note": "No usable answer from the search."}
+        parts = [p.strip() for p in line.split("|")]
+        email = parts[0] if parts else ""
+        source = parts[1] if len(parts) > 1 else ""
+        note = parts[2] if len(parts) > 2 else ""
+        if (not email or email.lower() == "none"
+                or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email)):
+            return {"found": False, "note": note or "No email found online."}
+        return {"found": True, "email": email, "source": source, "note": note}
 
     # -- phone push notifications (ntfy.sh) --------------------------------
 
@@ -1459,6 +1539,63 @@ class Agent:
                          "need an email address.", tags="mag")
         return {"ok": True, "added": added}
 
+    def research_missing_emails(self, force: bool = False, limit: int = None) -> dict:
+        """Researcher: hunt public contact emails for leads that lack one.
+        Results are SUGGESTIONS — a human accepts them before any outreach."""
+        if not force and not self.config.get("auto_research_enabled"):
+            return {"ok": True, "skipped": "researcher off"}
+        if limit is None:
+            limit = max(1, int(self.config.get("research_per_tick", 3) or 3))
+        leads = self.db.leads_to_research(limit)
+        found = 0
+        for lead in leads:
+            try:
+                result = self.services.research_email(dict(lead))
+            except Exception as e:
+                self.db.log(lead["id"], "research_failed", str(e)[:300])
+                self.db.update_lead(lead["id"], researched_at=_now())
+                continue
+            self.db.update_lead(lead["id"], researched_at=_now())
+            if result.get("found"):
+                self.db.update_lead(
+                    lead["id"], suggested_email=result["email"],
+                    suggested_email_source=(result.get("source") or "")[:300],
+                    suggested_email_note=(result.get("note") or "")[:300])
+                self.db.log(lead["id"], "email_suggested",
+                            f"Researcher found {result['email']} for "
+                            f"{lead['name']} — needs your OK.")
+                found += 1
+            else:
+                self.db.log(lead["id"], "email_not_found",
+                            f"No email found online for {lead['name']}: "
+                            f"{result.get('note', '')}"[:300])
+        if found:
+            self._notify(f"{found} email address{'' if found == 1 else 'es'} found",
+                         "The Researcher turned up contact addresses — check "
+                         "them on the Approve page.", tags="mag")
+        return {"ok": True, "researched": len(leads), "found": found}
+
+    def accept_suggested_email(self, lead_id: int) -> dict:
+        """Human accepts the Researcher's suggestion for a lead."""
+        lead = self.db.get_lead(lead_id)
+        if lead is None:
+            return {"ok": False, "error": "No such lead."}
+        if not lead["suggested_email"]:
+            return {"ok": False, "error": "No suggestion to accept."}
+        result = self.set_email(lead_id, lead["suggested_email"])
+        if result.get("ok"):
+            self.db.update_lead(lead_id, suggested_email=None,
+                                suggested_email_source=None,
+                                suggested_email_note=None)
+        return result
+
+    def reject_suggested_email(self, lead_id: int) -> dict:
+        self.db.update_lead(lead_id, suggested_email=None,
+                            suggested_email_source=None,
+                            suggested_email_note=None)
+        self.db.log(lead_id, "email_rejected", "You rejected the suggested email.")
+        return {"ok": True}
+
     def tick_transients(self) -> None:
         """Resume any lead parked in a transient stage (e.g. after a crash or
         a failed attempt). Each _advance_* step is idempotent."""
@@ -1477,3 +1614,4 @@ class Agent:
         self.poll_payments()
         self.tick_transients()
         self.run_saved_searches()
+        self.research_missing_emails()

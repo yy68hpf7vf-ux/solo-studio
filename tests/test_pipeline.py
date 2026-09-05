@@ -30,6 +30,10 @@ class FakeServices:
         self.checkout_calls = 0
         self.fail_once = set()         # method names that should raise once
         self._email_counter = 0
+        self.research_calls = []
+        self.research_result = {"found": True, "email": "found@example.com",
+                                "source": "https://facebook.com/biz",
+                                "note": "listed on their Facebook page"}
 
     def _maybe_fail(self, name):
         if name in self.fail_once:
@@ -74,6 +78,12 @@ class FakeServices:
         if "yes" in b or "love" in b:
             return "interested"
         return "unclear"
+
+    # -- researcher -------------------------------------------------------
+    def research_email(self, lead):
+        self._maybe_fail("research_email")
+        self.research_calls.append(lead["name"])
+        return dict(self.research_result)
 
     # -- netlify ---------------------------------------------------------
     def netlify_deploy(self, site_id, html, extra_files=None):
@@ -591,3 +601,76 @@ class ApprovalQueueTest(PipelineFixture):
         self.assertIn("placeholder", r["error"])
         self.assertEqual(self.svc.sent_emails, [])
         self.assertEqual(self.stage(lid), core.STAGE_FOUND)  # still queued
+
+
+class ResearcherTest(PipelineFixture):
+    """The Researcher suggests; only a human turns a suggestion into an email."""
+
+    def _found_lead(self):
+        self.agent.find_leads("plumbers")
+        return self.db.all_leads()[0]["id"]
+
+    def test_suggestion_is_not_an_email(self):
+        lid = self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        lead = self.db.get_lead(lid)
+        self.assertEqual(lead["suggested_email"], "found@example.com")
+        self.assertFalse(lead["email"])                       # not applied
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 0)
+        self.assertEqual(len(self.db.leads_needing_email()), 1)
+
+    def test_accepting_a_suggestion_queues_the_lead(self):
+        lid = self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        self.assertTrue(self.agent.accept_suggested_email(lid)["ok"])
+        lead = self.db.get_lead(lid)
+        self.assertEqual(lead["email"], "found@example.com")
+        self.assertIsNone(lead["suggested_email"])           # suggestion consumed
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 1)
+        self.assertEqual(self.svc.sent_emails, [])           # still nothing sent
+
+    def test_rejecting_clears_the_suggestion(self):
+        lid = self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        self.agent.reject_suggested_email(lid)
+        lead = self.db.get_lead(lid)
+        self.assertIsNone(lead["suggested_email"])
+        self.assertFalse(lead["email"])
+
+    def test_never_researches_the_same_lead_twice(self):
+        self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(len(self.svc.research_calls), 1)
+
+    def test_no_result_is_recorded_and_not_retried(self):
+        lid = self._found_lead()
+        self.svc.research_result = {"found": False, "note": "nothing online"}
+        self.agent.research_missing_emails(force=True)
+        self.assertIsNone(self.db.get_lead(lid)["suggested_email"])
+        self.assertIsNotNone(self.db.get_lead(lid)["researched_at"])
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(len(self.svc.research_calls), 1)
+
+    def test_failure_does_not_stall_the_lead_or_the_batch(self):
+        self.db.add_lead(place_id="p2", name="Second Biz", address=None,
+                         phone=None, category=None)
+        self._found_lead()
+        self.svc.fail_once.add("research_email")
+        r = self.agent.research_missing_emails(force=True, limit=5)
+        self.assertEqual(r["researched"], 2)
+        self.assertEqual(r["found"], 1)          # the other one still worked
+        kinds = [e["kind"] for e in self.db.recent_events(20)]
+        self.assertIn("research_failed", kinds)
+
+    def test_off_by_default(self):
+        self._found_lead()
+        self.assertEqual(self.agent.research_missing_emails().get("skipped"),
+                         "researcher off")
+        self.assertEqual(self.svc.research_calls, [])
+
+    def test_researcher_skips_leads_that_already_have_an_email(self):
+        lid = self._found_lead()
+        self.agent.set_email(lid, "already@example.com")
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(self.svc.research_calls, [])

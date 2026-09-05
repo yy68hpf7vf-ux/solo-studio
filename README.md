@@ -150,6 +150,26 @@ from anywhere, on any network.
 So the loop is: **find → you add an email → you approve → the machine closes
 the deal.**
 
+### The team
+
+Open the **Team** page to see all eight specialists, what each has done, and
+whether it's on duty or waiting on a key:
+
+| | Specialist | Job | Runs on |
+|---|---|---|---|
+| 🔭 | **Scout** | Finds local businesses with no website | Google Places |
+| 🕵️ | **Researcher** | Hunts their contact email online — *suggests only* | Claude + web search |
+| ✍️ | **Copywriter** | Writes each cold email — *never sends without your OK* | Your template |
+| 📬 | **Triage** | Reads replies, judges interest | Claude |
+| 🎨 | **Designer** | Designs the one-page site | Claude |
+| 🚀 | **Deployer** | Publishes the watermarked preview | Netlify |
+| 💳 | **Biller** | Sends the payment link, watches for payment | Stripe |
+| 📦 | **Delivery** | Ships the clean site once paid — *gated on Stripe* | Netlify + Stripe |
+
+Only Triage, Designer and Researcher use AI judgment. Payments, deploys and the
+payment gate are plain deterministic code on purpose — those must be exactly
+right every time, and an LLM adds risk there with no upside.
+
 - **Automatic lead hunting:** on the Setup page, list the searches you want
   (one per line, e.g. `plumbers in Riverside, CA`) and tick *Search for new
   leads automatically*. New no-website businesses are added on a schedule and

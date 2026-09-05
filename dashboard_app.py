@@ -339,6 +339,7 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
   <a href="{{ url_for('approve_queue') }}">Approve{% if pending_count %}
     <span style="background:#f59e0b;color:#111;border-radius:999px;padding:1px 7px;
     font-size:12px;margin-left:3px">{{ pending_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('team_page') }}">Team</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('setup') }}">Setup</a>
   <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#7dd3fc">◉ JARVIS</a>
@@ -622,6 +623,11 @@ keep the saved value.</p>
   placeholder="plumbers in Riverside, CA&#10;barber shops in Riverside, CA&#10;landscapers in Corona, CA">{{ config.saved_searches }}</textarea>
 </div>
 <div>
+<label><input type="checkbox" name="auto_research_enabled" value="1"
+  {% if config.auto_research_enabled %}checked{% endif %}
+  style="width:auto;margin-right:8px">Let the Researcher hunt missing emails</label>
+<p class="muted">Uses Claude's web search to find each business's public contact
+address. It only ever suggests — you accept or reject each one.</p>
 <label>How often to search (hours)</label>
 <input type="number" name="search_interval_hours" min="1" max="168"
   value="{{ config.search_interval_hours }}">
@@ -1287,15 +1293,37 @@ by themselves.</p></div>
 {% if needs_email %}
 <div class="card">
 <h2>Need an email address ({{ needs_email|length }})</h2>
-<p class="muted">Google doesn't publish business emails. Look these up (Facebook,
-Yelp, or a quick call) and paste the address — they'll move up to the approval
-list above.</p>
+<p class="muted">Google doesn't publish business emails. The Researcher hunts
+for them online — accept what it finds, or look one up yourself (Facebook, Yelp,
+a quick call) and paste it in.</p>
+<form method="post" action="{{ url_for('run_research') }}" style="margin-bottom:12px">
+  <button class="btn">🕵️ Send the Researcher after these</button></form>
 <div class="tablewrap"><table class="stack"><tbody>
 {% for l in needs_email %}
 <tr>
   <td><b>{{ l['name'] }}</b><div class="muted">{{ l['category'] or '' }}
       {% if l['phone'] %}· {{ l['phone'] }}{% endif %}</div></td>
   <td style="min-width:210px">
+    {% if l['suggested_email'] %}
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+      padding:9px 11px;margin-bottom:8px">
+      <div class="muted" style="font-size:11px;text-transform:uppercase;
+        letter-spacing:.05em;color:#1d4ed8">Researcher found</div>
+      <div style="font-weight:600;word-break:break-all">{{ l['suggested_email'] }}</div>
+      {% if l['suggested_email_note'] %}<div class="muted">{{ l['suggested_email_note'] }}</div>{% endif %}
+      {% if l['suggested_email_source'] %}<div class="muted">
+        <a href="{{ l['suggested_email_source'] }}" target="_blank"
+          rel="noopener noreferrer">where it found it ↗</a></div>{% endif %}
+      <div style="display:flex;gap:6px;margin-top:7px">
+        <form class="inline" method="post"
+          action="{{ url_for('accept_email', lead_id=l['id']) }}">
+          <button class="btn btn-sm btn-primary">Use this</button></form>
+        <form class="inline" method="post"
+          action="{{ url_for('reject_email', lead_id=l['id']) }}">
+          <button class="btn btn-sm">No</button></form>
+      </div>
+    </div>
+    {% endif %}
     <form method="post" action="{{ url_for('set_email', lead_id=l['id']) }}"
       style="display:flex;gap:6px">
       <input type="text" name="email" placeholder="email@business.com"
@@ -1358,6 +1386,186 @@ def run_searches():
             flash(f"Nothing to do — {r['skipped']}. Add searches in Setup.", "err")
         else:
             flash(f"Search finished: {r.get('added', 0)} new leads added.", "ok")
+    except Exception as e:
+        flash(str(e), "err")
+    return redirect(url_for("approve_queue"))
+
+
+
+TEAM_PAGE = """
+{% extends "base" %}{% block body %}
+<div class="card">
+<h1>Your team</h1>
+<p class="muted" style="margin-top:-6px">Eight specialists. Each owns one job and
+hands off to the next. Two of them ask you before acting — everything else runs
+on its own.</p>
+</div>
+
+{% for m in team %}
+<div class="card" style="border-left:4px solid {{ m.color }}">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;
+    gap:10px;flex-wrap:wrap">
+    <h2 style="margin:0">{{ m.icon }} {{ m.name }}</h2>
+    <span class="badge" style="background:{{ m.chip_bg }};color:{{ m.chip_fg }}">
+      {{ m.status }}</span>
+  </div>
+  <p style="margin:6px 0 4px">{{ m.job }}</p>
+  <div class="muted">Runs on: {{ m.powered }}</div>
+  {% if m.gate %}<div class="muted" style="color:var(--warn);margin-top:4px">
+    ⚑ {{ m.gate }}</div>{% endif %}
+  <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:10px">
+    {% for label, value in m.stats %}
+    <div><div class="muted" style="font-size:11px;text-transform:uppercase;
+      letter-spacing:.05em">{{ label }}</div>
+      <b style="font-size:19px">{{ value }}</b></div>
+    {% endfor %}
+  </div>
+  {% if m.last %}<div class="muted" style="margin-top:8px">
+    Last: {{ m.last }}</div>{% endif %}
+</div>
+{% endfor %}
+{% endblock %}
+"""
+
+
+def _team_roster():
+    """The pipeline described as the specialists who actually do each job."""
+    db, cfg = STATE.db, STATE.config
+    ev = db.event_counts()
+    stages = {}
+    for lead in db.all_leads():
+        stages[lead["stage"]] = stages.get(lead["stage"], 0) + 1
+
+    def last_detail(*kinds):
+        for e in db.recent_events(120):
+            if e["kind"] in kinds:
+                return (e["detail"] or "")[:110]
+        return ""
+
+    def state(ready: bool, on: bool = True, missing: str = ""):
+        if not ready:
+            return "NEEDS KEY", "#fee2e2", "#b91c1c", missing
+        if not on:
+            return "STANDBY", "#f1f5f9", "#64748b", ""
+        return "ON DUTY", "#dcfce7", "#15803d", ""
+
+    auto = bool(cfg.get("autopilot_enabled"))
+    members = [
+        dict(icon="🔭", name="Scout", color="#6366f1",
+             job="Searches Google Places for local businesses that have no "
+                 "website, and adds them as leads.",
+             powered="Google Places API",
+             stats=[("Searches run", ev.get("find_leads", 0)),
+                    ("Leads found", len(db.all_leads()))],
+             last=last_detail("find_leads", "auto_search"),
+             st=state(bool(cfg.get("google_places_api_key")),
+                      bool(cfg.get("auto_search_enabled")),
+                      "Add your Google Places key in Setup")),
+        dict(icon="🕵️", name="Researcher", color="#0ea5e9",
+             job="Searches the web for the contact email of businesses that "
+                 "don't have one — Facebook, Yelp, directories.",
+             powered="Claude with web search",
+             stats=[("Emails found", ev.get("email_suggested", 0)),
+                    ("Came up empty", ev.get("email_not_found", 0)),
+                    ("Still no email", len(db.leads_needing_email()))],
+             last=last_detail("email_suggested", "email_not_found"),
+             gate="Suggests only — you accept each address",
+             st=state(bool(cfg.get("anthropic_api_key")),
+                      bool(cfg.get("auto_research_enabled")),
+                      "Add your Anthropic key in Setup")),
+        dict(icon="✍️", name="Copywriter", color="#8b5cf6",
+             job="Writes each cold email from your template, personalised with "
+                 "the business name and your details.",
+             powered="Your template in Setup",
+             stats=[("Waiting for you", len(db.leads_awaiting_approval())),
+                    ("Approved & sent", ev.get("outreach_sent", 0)),
+                    ("Sent today", db.sends_today())],
+             last=last_detail("outreach_sent"),
+             gate="Never sends without your approval",
+             st=state(bool(cfg.get("inkbox_api_key")), True,
+                      "Add your Inkbox key in Setup")),
+        dict(icon="📬", name="Triage", color="#f59e0b",
+             job="Reads every reply and works out whether they're interested, "
+                 "not interested, or asking a question.",
+             powered="Claude",
+             stats=[("Replies read", ev.get("reply_received", 0)),
+                    ("Passed to you", ev.get("reply_unclear", 0)),
+                    ("Opted out", ev.get("unsubscribed", 0))],
+             last=last_detail("reply_received"),
+             st=state(bool(cfg.get("anthropic_api_key")), auto,
+                      "Add your Anthropic key in Setup")),
+        dict(icon="🎨", name="Designer", color="#ec4899",
+             job="Designs a complete one-page website for the business, "
+                 "matched to what they do.",
+             powered="Claude",
+             stats=[("Sites designed", ev.get("site_generated", 0))],
+             last=last_detail("site_generated"),
+             st=state(bool(cfg.get("anthropic_api_key")), auto,
+                      "Add your Anthropic key in Setup")),
+        dict(icon="🚀", name="Deployer", color="#14b8a6",
+             job="Publishes the watermarked preview to the web and emails the "
+                 "link to the lead.",
+             powered="Netlify",
+             stats=[("Previews live", ev.get("preview_deployed", 0)),
+                    ("Links emailed", ev.get("preview_emailed", 0))],
+             last=last_detail("preview_deployed"),
+             st=state(bool(cfg.get("netlify_api_key")), auto,
+                      "Add your Netlify token in Setup")),
+        dict(icon="💳", name="Biller", color="#22c55e",
+             job="Creates the payment link, emails it, and watches Stripe "
+                 "around the clock until the money clears.",
+             powered="Stripe",
+             stats=[("Links sent", ev.get("payment_link_emailed", 0)),
+                    ("Payments confirmed", ev.get("payment_confirmed", 0)),
+                    ("Awaiting payment",
+                     stages.get(core.STAGE_PAYMENT_LINK_SENT, 0))],
+             last=last_detail("payment_confirmed", "payment_link_emailed"),
+             st=state(bool(cfg.get("stripe_secret_key")), auto,
+                      "Add your Stripe key in Setup")),
+        dict(icon="📦", name="Delivery", color="#0284c7",
+             job="Once Stripe confirms payment, strips the watermark, puts the "
+                 "real site live, and emails the customer.",
+             powered="Netlify + Stripe check",
+             stats=[("Sites delivered", ev.get("delivered", 0)),
+                    ("Revenue", "$" + f"{db.revenue_cents() // 100:,}")],
+             last=last_detail("delivered"),
+             gate="Blocked until Stripe confirms payment",
+             st=state(bool(cfg.get("netlify_api_key")
+                           and cfg.get("stripe_secret_key")), auto,
+                      "Add your Netlify and Stripe keys in Setup")),
+    ]
+    for m in members:
+        status, bg, fg, missing = m.pop("st")
+        m["status"], m["chip_bg"], m["chip_fg"] = status, bg, fg
+        m.setdefault("gate", "")
+        if missing:
+            m["gate"] = missing
+    return members
+
+
+@app.get("/team")
+def team_page():
+    return _render(TEAM_PAGE, team=_team_roster())
+
+
+@app.post("/action/accept_email/<int:lead_id>")
+def accept_email(lead_id):
+    _flash_result(STATE.agent.accept_suggested_email(lead_id), "Email saved.")
+    return redirect(url_for("approve_queue"))
+
+
+@app.post("/action/reject_email/<int:lead_id>")
+def reject_email(lead_id):
+    STATE.agent.reject_suggested_email(lead_id)
+    return redirect(url_for("approve_queue"))
+
+
+@app.post("/action/run_research")
+def run_research():
+    try:
+        r = STATE.agent.research_missing_emails(force=True, limit=5)
+        flash(f"Researcher checked {r.get('researched', 0)} businesses and found "
+              f"{r.get('found', 0)} email addresses.", "ok")
     except Exception as e:
         flash(str(e), "err")
     return redirect(url_for("approve_queue"))
@@ -1513,6 +1721,7 @@ def setup():
             except (TypeError, ValueError):
                 pass
         cfg["auto_search_enabled"] = bool(request.form.get("auto_search_enabled"))
+        cfg["auto_research_enabled"] = bool(request.form.get("auto_research_enabled"))
         if "saved_searches" in request.form:
             cfg["saved_searches"] = request.form.get("saved_searches", "")
         for field, lo, hi in (("search_interval_hours", 1, 168),
