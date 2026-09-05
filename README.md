@@ -139,7 +139,7 @@ from anywhere, on any network.
 | Step | Who does it |
 |---|---|
 | Finding businesses with no website | **Automatic** (saved searches on a schedule) |
-| Getting their email address | **You** — Google doesn't publish it |
+| Getting their email address | **Researcher suggests, you accept** |
 | Sending the cold email | **You approve it**, then it sends |
 | Reading replies, judging interest | Automatic |
 | Designing + deploying the preview site | Automatic |
