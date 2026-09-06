@@ -100,7 +100,7 @@ PWA_META = (
     '<meta name="apple-mobile-web-app-capable" content="yes">'
     '<meta name="mobile-web-app-capable" content="yes">'
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
-    '<meta name="theme-color" content="#08090c">'
+    '<meta name="theme-color" content="#100d0b">'
 )
 
 
@@ -269,16 +269,19 @@ BASE = """
 /* Dark glass, after the Mac desktop: near-black ground, a soft cold glow
    behind it, and translucent rounded panels floating on top. */
 :root{
-  --bg:#08090c; --bg2:#0d1015;
-  --panel:rgba(17,20,27,.68);          /* dark glass — tinted, not transparent */
-  --panel-2:rgba(17,20,27,.5);         /* one step quieter */
+  /* Ember. The accent is warm, so the states that must never be confused —
+     paid, waiting, broken — keep their own hues instead of all sliding into
+     orange; see the badge block below. */
+  --bg:#100d0b; --bg2:#17120e;
+  --panel:rgba(31,24,20,.74);           /* dark glass — tinted, not transparent */
+  --panel-2:rgba(31,24,20,.54);         /* one step quieter */
   --card:var(--panel);
-  --ink:#eceff4; --mut:#8d99a9;
-  --line:rgba(255,255,255,.085);
-  --line-2:rgba(255,255,255,.05);
-  --acc:#8aa9ff;                       /* the periwinkle from the widgets */
-  --acc-ink:#0a0d14;
-  --ok:#5bd98a; --warn:#f5b544; --bad:#ff7b72;
+  --ink:#f5ece6; --mut:#a3907f;
+  --line:rgba(255,186,142,.11);
+  --line-2:rgba(255,186,142,.065);
+  --acc:#ff8a5b;                        /* firelight */
+  --acc-ink:#22100a;
+  --ok:#8fd98a; --warn:#f2c46b; --bad:#ff6b6b;
   --r-lg:18px; --r-md:12px; --r-sm:9px;
 }
 *{box-sizing:border-box}
@@ -338,24 +341,24 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 .card,.stat{transform-style:preserve-3d;
   transition:transform .35s cubic-bezier(.22,.61,.36,1),
              box-shadow .35s, border-color .35s}
-.card.lift{box-shadow:0 1px 0 rgba(255,255,255,.07) inset,
-  0 20px 60px rgba(0,0,0,.5), 0 0 44px rgba(138,169,255,.10);
-  border-color:rgba(138,169,255,.22)}
-.stat.lift{border-color:rgba(138,169,255,.3);
+.card.lift{box-shadow:0 1px 0 rgba(255,210,175,.08) inset,
+  0 22px 62px rgba(0,0,0,.55), 0 0 46px rgba(255,138,91,.14);
+  border-color:rgba(255,138,91,.22)}
+.stat.lift{border-color:rgba(255,138,91,.3);
   box-shadow:0 10px 30px rgba(0,0,0,.45)}
 /* the specular sheen that tracks the pointer across a panel */
 .card{position:relative;overflow:hidden}
 .card::after{content:"";position:absolute;inset:0;pointer-events:none;
   opacity:0;transition:opacity .35s;border-radius:inherit;
   background:radial-gradient(420px circle at var(--mx,50%) var(--my,0%),
-    rgba(138,169,255,.10), transparent 62%)}
+    rgba(255,138,91,.10), transparent 62%)}
 .card.lift::after{opacity:1}
 
 @media (prefers-reduced-motion:reduce){
   #aurora,#aurora canvas{animation:none!important;transform:none!important}
   #aurora{opacity:.55}
   body::before{background:
-    radial-gradient(58vw 42vw at 78% -6%, rgba(138,169,255,.11), transparent 62%),
+    radial-gradient(58vw 42vw at 78% -6%, rgba(255,138,91,.11), transparent 62%),
     linear-gradient(180deg,var(--bg2),var(--bg) 52%)}
   .card,.stat{transition:none}
 }
@@ -363,11 +366,11 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
   padding:13px 22px;color:var(--ink);
-  background:rgba(10,12,16,.72);backdrop-filter:saturate(160%) blur(18px);
+  background:rgba(16,13,11,.78);backdrop-filter:saturate(160%) blur(18px);
   -webkit-backdrop-filter:saturate(160%) blur(18px);
   border-bottom:1px solid var(--line-2)}
 header .brand{font-weight:650;font-size:16px;letter-spacing:-.01em}
-header a{color:#9aa6b6;text-decoration:none;font-weight:500;font-size:14px;
+header a{color:#b0a094;text-decoration:none;font-weight:500;font-size:14px;
   padding:5px 2px;transition:color .15s}
 header a:hover{color:var(--ink)}
 main{max-width:1120px;margin:26px auto 60px;padding:0 18px}
@@ -376,7 +379,7 @@ main{max-width:1120px;margin:26px auto 60px;padding:0 18px}
   padding:20px 22px;margin-bottom:16px;
   backdrop-filter:blur(22px) saturate(150%);
   -webkit-backdrop-filter:blur(22px) saturate(150%);
-  box-shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 10px 34px rgba(0,0,0,.34)}
+  box-shadow:0 1px 0 rgba(255,210,175,.05) inset, 0 10px 34px rgba(0,0,0,.4)}
 h1{font-size:20px;margin:0 0 14px;font-weight:620;letter-spacing:-.015em}
 h2{font-size:15px;margin:0 0 10px;font-weight:600;letter-spacing:-.01em}
 
@@ -388,41 +391,41 @@ tr:last-child td{border-bottom:0}
 th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;
   letter-spacing:.07em}
 tbody tr{transition:background .12s}
-tbody tr:hover{background:rgba(255,255,255,.022)}
+tbody tr:hover{background:rgba(255,186,142,.03)}
 
 /* ---- stage badges: lit glass, not pastel stickers ---- */
 .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;
   font-weight:600;white-space:nowrap;border:1px solid transparent}
-.b-found{background:rgba(138,169,255,.14);color:#a9c0ff;border-color:rgba(138,169,255,.24)}
-.b-contacted{background:rgba(56,189,248,.13);color:#7dd3fc;border-color:rgba(56,189,248,.24)}
-.b-preview_sent{background:rgba(250,204,21,.13);color:#fbe08a;border-color:rgba(250,204,21,.24)}
-.b-payment_link_sent{background:rgba(251,146,60,.14);color:#fdba74;border-color:rgba(251,146,60,.26)}
-.b-paid,.b-delivered{background:rgba(74,222,128,.14);color:#86efac;border-color:rgba(74,222,128,.26)}
-.b-not_interested{background:rgba(255,255,255,.06);color:#94a3b8;border-color:var(--line)}
-.b-error{background:rgba(248,113,113,.14);color:#fca5a5;border-color:rgba(248,113,113,.28)}
+.b-found{background:rgba(255,138,91,.15);color:#ffb494;border-color:rgba(255,138,91,.3)}
+.b-contacted{background:rgba(125,190,230,.13);color:#9fcdea;border-color:rgba(125,190,230,.26)}
+.b-preview_sent{background:rgba(242,196,107,.15);color:#f5d08a;border-color:rgba(242,196,107,.3)}
+.b-payment_link_sent{background:rgba(190,150,240,.15);color:#cbb0f2;border-color:rgba(190,150,240,.3)}
+.b-paid,.b-delivered{background:rgba(143,217,138,.15);color:#a8e5a3;border-color:rgba(143,217,138,.3)}
+.b-not_interested{background:rgba(255,186,142,.07);color:#a3907f;border-color:var(--line)}
+.b-error{background:rgba(255,107,107,.15);color:#ff9f9f;border-color:rgba(255,107,107,.32)}
 .b-building_preview,.b-sending_payment_link,.b-deploying_final{
-  background:rgba(167,139,250,.14);color:#c4b5fd;border-color:rgba(167,139,250,.26)}
+  background:rgba(110,205,195,.14);color:#8fd8cc;border-color:rgba(110,205,195,.28)}
 
 /* ---- controls ---- */
 .btn{display:inline-block;border:1px solid var(--line);background:var(--panel);
   color:var(--ink);border-radius:var(--r-sm);padding:7px 13px;font-size:13px;
   font-weight:600;cursor:pointer;text-decoration:none;transition:.15s;
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.btn:hover{border-color:rgba(138,169,255,.5);color:#fff;
-  background:rgba(138,169,255,.12)}
+.btn:hover{border-color:rgba(255,138,91,.5);color:#fff;
+  background:rgba(255,138,91,.12)}
 .btn-primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
-.btn-primary:hover{background:#9fb8ff;border-color:#9fb8ff;color:var(--acc-ink)}
+.btn-primary:hover{background:#ff9d74;border-color:#ff9d74;color:var(--acc-ink)}
 .btn-danger{color:var(--bad)}
-.btn-danger:hover{border-color:rgba(255,123,114,.5);background:rgba(255,123,114,.12);
-  color:#ffa39d}
+.btn-danger:hover{border-color:rgba(255,107,107,.5);background:rgba(255,107,107,.12);
+  color:#ffaeae}
 .btn-sm{padding:4px 10px;font-size:12px}
 form.inline{display:inline}
 input[type=text],input[type=password],input[type=number],textarea,select{
   width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);
   font:inherit;background:rgba(0,0,0,.28);color:var(--ink);transition:.15s}
-input:focus,textarea:focus,select:focus{outline:0;border-color:rgba(138,169,255,.55);
-  background:rgba(0,0,0,.38);box-shadow:0 0 0 3px rgba(138,169,255,.13)}
-input::placeholder,textarea::placeholder{color:#5f6b7a}
+input:focus,textarea:focus,select:focus{outline:0;border-color:rgba(255,138,91,.55);
+  background:rgba(0,0,0,.38);box-shadow:0 0 0 3px rgba(255,138,91,.13)}
+input::placeholder,textarea::placeholder{color:#7a6857}
 textarea{min-height:120px;line-height:1.6}
 label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
 input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:auto;
@@ -432,11 +435,11 @@ details summary::marker{color:var(--mut)}
 /* ---- notices ---- */
 .flash{padding:11px 15px;border-radius:var(--r-md);margin-bottom:14px;
   font-weight:500;border:1px solid transparent}
-.flash.ok{background:rgba(91,217,138,.11);color:#9ff0bd;border-color:rgba(91,217,138,.26)}
-.flash.err{background:rgba(255,123,114,.11);color:#ffb4ae;border-color:rgba(255,123,114,.28)}
+.flash.ok{background:rgba(143,217,138,.12);color:#a8e5a3;border-color:rgba(143,217,138,.28)}
+.flash.err{background:rgba(255,107,107,.12);color:#ffaeae;border-color:rgba(255,107,107,.3)}
 .muted{color:var(--mut);font-size:13px}
-.warnbar{background:rgba(245,181,68,.09);border:1px solid rgba(245,181,68,.26);
-  color:#f3cf92;border-radius:var(--r-lg);padding:13px 17px;margin-bottom:16px;
+.warnbar{background:rgba(242,196,107,.10);border:1px solid rgba(242,196,107,.28);
+  color:#f5d5a0;border-radius:var(--r-lg);padding:13px 17px;margin-bottom:16px;
   display:flex;justify-content:space-between;align-items:center;gap:12px}
 .attention{border-left:3px solid var(--warn)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
@@ -452,31 +455,31 @@ details summary::marker{color:var(--mut)}
 
 /* callout boxes + the cold-email preview, shared by several pages */
 .note{border-radius:var(--r-md);padding:14px 16px;border:1px solid var(--line)}
-.note.info{background:rgba(138,169,255,.10);border-color:rgba(138,169,255,.26)}
-.note.warn{background:rgba(245,181,68,.10);border-color:rgba(245,181,68,.26)}
+.note.info{background:rgba(255,138,91,.10);border-color:rgba(255,138,91,.26)}
+.note.warn{background:rgba(242,196,107,.11);border-color:rgba(242,196,107,.28)}
 .note .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
   color:var(--acc);font-weight:600}
 .emailbox{border:1px solid var(--line);border-radius:var(--r-md);padding:13px 15px;
   background:rgba(0,0,0,.24);margin:10px 0}
 .emailbox .subj{font-weight:600;margin-bottom:7px}
-.emailbox .body{white-space:pre-wrap;font-size:13.5px;color:#aab6c4;line-height:1.6}
+.emailbox .body{white-space:pre-wrap;font-size:13.5px;color:#cdbcae;line-height:1.6}
 
-code{background:rgba(255,255,255,.07);padding:2px 6px;border-radius:5px;
-  font-size:13px;color:#cbd5e1;
+code{background:rgba(255,186,142,.09);padding:2px 6px;border-radius:5px;
+  font-size:13px;color:#e2cdbd;
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-a{color:var(--acc);text-decoration-color:rgba(138,169,255,.4);
+a{color:var(--acc);text-decoration-color:rgba(255,138,91,.4);
   text-underline-offset:2px}
 a:hover{text-decoration-color:currentColor}
 td a{color:var(--ink);text-decoration:none;font-weight:600}
 td a:hover{color:var(--acc)}
 .tablewrap{overflow-x:auto}
 ::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:6px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2)}
+::-webkit-scrollbar-thumb{background:rgba(255,186,142,.16);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,186,142,.26)}
 ::-webkit-scrollbar-track{background:transparent}
 
 #live-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;
-  background:rgba(20,24,31,.9);color:var(--ink);padding:11px 20px;
+  background:rgba(32,25,20,.92);color:var(--ink);padding:11px 20px;
   border:1px solid var(--line);border-radius:999px;
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   font-size:14px;font-weight:600;cursor:pointer;z-index:50;
@@ -514,7 +517,7 @@ td a:hover{color:var(--acc)}
   <a href="{{ url_for('setup') }}">Setup</a>
   <a href="{{ url_for('updates_page') }}">Updates{% if update_ready %}
     <span style="color:var(--ok)">●</span>{% endif %}</a>
-  <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#7dd3fc">◉ JARVIS</a>
+  <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#ffc06a">◉ JARVIS</a>
   {% if cloud_mode %}<form class="inline" method="post" action="{{ url_for('logout') }}">
   <button class="btn btn-sm" style="background:transparent">Sign out</button>
   </form>{% endif %}
@@ -550,10 +553,10 @@ td a:hover{color:var(--acc)}
 
   /* Four bands of ribbons. Each is painted once; after that the CSS moves it. */
   var BANDS = [
-    { ribbons: 2, hue: [140,168,255], width: 30, alpha: 0.15 },
-    { ribbons: 2, hue: [205,220,255], width: 22, alpha: 0.11 },
-    { ribbons: 2, hue: [120,146,238], width: 34, alpha: 0.14 },
-    { ribbons: 2, hue: [104,134,232], width: 42, alpha: 0.10 }
+    { ribbons: 2, hue: [255,138, 91], width: 30, alpha: 0.17 },
+    { ribbons: 2, hue: [255,201,140], width: 22, alpha: 0.13 },
+    { ribbons: 2, hue: [214, 94, 58], width: 34, alpha: 0.16 },
+    { ribbons: 2, hue: [255,168, 96], width: 42, alpha: 0.11 }
   ];
   var W = 360, H = 200;                       /* tiny — CSS smooths it up to full size */
 
@@ -792,7 +795,7 @@ phone call) before outreach can go out. Found businesses queue up on the
 <thead><tr><th>Business</th><th>Stage</th><th>Email</th><th>Links</th><th>Actions</th></tr></thead>
 <tbody>
 {% for l in leads %}
-<tr {% if l['error'] %}style="background:rgba(255,123,114,.07)"{% endif %}>
+<tr {% if l['error'] %}style="background:rgba(255,107,107,.07)"{% endif %}>
   <td><a href="{{ url_for('lead_page', lead_id=l['id']) }}"><b>{{ l['name'] }}</b></a>
       <div class="muted">{{ l['category'] or '' }}{% if l['address'] %} · {{ l['address'] }}{% endif %}</div>
       {% if l['error'] %}<div class="muted" style="color:var(--bad)">⚠ {{ l['error'][:120] }}</div>{% endif %}</td>
@@ -911,24 +914,24 @@ SETUP = """
 {% extends "base" %}{% block body %}
 <style>
 .keyhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.keyhead .n{background:rgba(255,255,255,.11);color:var(--ink);border-radius:999px;
+.keyhead .n{background:rgba(255,186,142,.14);color:var(--ink);border-radius:999px;
   width:22px;height:22px;
   display:inline-flex;align-items:center;justify-content:center;font-size:12px;
   font-weight:700;flex:0 0 auto;align-self:center}
 .keyhead h3{margin:0;font-size:15px}
 .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
   text-transform:uppercase;letter-spacing:.03em}
-.pill.have{background:rgba(91,217,138,.16);color:#8ce8ac}
-.pill.need{background:rgba(245,181,68,.16);color:#f3cf92}
+.pill.have{background:rgba(143,217,138,.17);color:#a8e5a3}
+.pill.need{background:rgba(242,196,107,.17);color:#f5d5a0}
 .keycard{border:1px solid var(--line);border-radius:var(--r-md);padding:15px 17px;
   margin-bottom:11px;background:var(--panel-2)}
-.keycard.done{background:rgba(91,217,138,.055);border-color:rgba(91,217,138,.24)}
-.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#b3bfcd}
+.keycard.done{background:rgba(143,217,138,.06);border-color:rgba(143,217,138,.26)}
+.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#cdbcae}
 .keycard ol li{margin-bottom:5px}
 .keycard .note{font-size:12.5px;color:var(--mut);margin-top:9px;
   border-left:3px solid var(--line);padding-left:9px}
-.progress{background:linear-gradient(135deg,rgba(138,169,255,.18),rgba(138,169,255,.06));
-  border:1px solid rgba(138,169,255,.26);color:var(--ink);border-radius:var(--r-md);
+.progress{background:linear-gradient(135deg,rgba(255,138,91,.18),rgba(255,138,91,.06));
+  border:1px solid rgba(255,138,91,.26);color:var(--ink);border-radius:var(--r-md);
   padding:13px 17px;margin-bottom:16px;font-weight:600}
 .progress .sub{font-weight:400;opacity:.75;font-size:13px;margin-top:3px}
 details.adv{border:1px solid var(--line);border-radius:var(--r-md);padding:0 15px;
@@ -1139,8 +1142,8 @@ ASK = """
   font-weight:500;border-bottom-right-radius:5px}
 .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
   border-bottom-left-radius:5px}
-.msg.bad{align-self:flex-start;background:rgba(255,123,114,.12);color:#ffb4ae;
-  border:1px solid rgba(255,123,114,.28)}
+.msg.bad{align-self:flex-start;background:rgba(255,107,107,.12);color:#ffaeae;
+  border:1px solid rgba(255,107,107,.3)}
 .msg.think{align-self:flex-start;background:var(--panel);color:var(--mut);
   border:1px solid var(--line)}
 .askbar{display:flex;gap:8px;margin-top:12px;align-items:flex-end}
@@ -1150,8 +1153,8 @@ ASK = """
 .starters button{font:inherit;font-size:13px;background:var(--panel);cursor:pointer;
   border:1px solid var(--line);border-radius:999px;padding:7px 14px;color:var(--ink);
   transition:.15s}
-.starters button:hover{border-color:rgba(138,169,255,.5);color:#fff;
-  background:rgba(138,169,255,.13)}
+.starters button:hover{border-color:rgba(255,138,91,.5);color:#fff;
+  background:rgba(255,138,91,.13)}
 @media (max-width:800px){.chat{max-height:none}.msg{max-width:92%}}
 </style>
 <div class="card">
@@ -1302,22 +1305,22 @@ JARVIS = """<!doctype html>
 <title>JARVIS — Solo Studio</title>
 PWAMETA_PLACEHOLDER
 <style>
-:root{--cy:#5ad7ff;--cy2:#9fe8ff;--dim:#3a6d8a;--amber:#ffb454;--grn:#4ade80;
-      --red:#ff6b6b;--ink:#dff3ff;--accent:#5ad7ff}
+:root{--cy:#ffa257;--cy2:#ffd0a0;--dim:#8a6244;--amber:#ff5f43;--grn:#8fd98a;
+      --red:#ff5f43;--ink:#ffeadb;--accent:#ffa257}
 *{box-sizing:border-box;margin:0}
 html,body{height:100%}
-body{background:radial-gradient(1200px 800px at 50% 42%,#0a1f33 0%,#04101d 55%,#020810 100%);
+body{background:radial-gradient(1200px 800px at 50% 42%,#241309 0%,#150d08 55%,#0a0604 100%);
   color:var(--ink);font:14px/1.45 "SF Mono",Menlo,Consolas,monospace;overflow:hidden}
 body.alert{--accent:var(--amber)}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
-  background-image:linear-gradient(rgba(90,215,255,.045) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(90,215,255,.045) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(255,162,87,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,162,87,.045) 1px,transparent 1px);
   background-size:44px 44px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.12) 0 2px,transparent 2px 4px)}
 /* a beam that sweeps down the whole display now and then */
 #beam{position:fixed;left:0;right:0;height:180px;z-index:3;pointer-events:none;
-  background:linear-gradient(180deg,transparent,rgba(90,215,255,.055),transparent);
+  background:linear-gradient(180deg,transparent,rgba(255,162,87,.055),transparent);
   animation:sweep 9s linear infinite}
 @keyframes sweep{0%{top:-180px}100%{top:100%}}
 /* corner brackets framing the display */
@@ -1332,11 +1335,11 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
   grid-template-rows:auto auto 1fr 196px;grid-template-columns:280px 1fr 300px;
   grid-template-areas:"top top top" "kpis kpis kpis" "left core right" "feed feed feed"}
 .label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
-.glow{text-shadow:0 0 14px rgba(90,215,255,.75),0 0 34px rgba(90,215,255,.30)}
+.glow{text-shadow:0 0 14px rgba(255,162,87,.75),0 0 34px rgba(255,162,87,.30)}
 
 /* ---- top bar ---- */
 .top{grid-area:top;display:flex;align-items:center;gap:16px;
-  border-bottom:1px solid rgba(90,215,255,.22);padding-bottom:12px}
+  border-bottom:1px solid rgba(255,162,87,.22);padding-bottom:12px}
 .top .sys{font-size:17px;letter-spacing:.34em;color:var(--cy2)}
 .top .greet{color:#8fc7e6;font-size:13px;letter-spacing:.06em;
   white-space:nowrap;overflow:hidden}
@@ -1351,17 +1354,17 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
 /* the exit — always visible, big enough to tap */
 .back{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
   color:var(--cy2);font-size:12px;letter-spacing:.16em;padding:9px 16px;
-  border:1px solid rgba(90,215,255,.45);border-radius:6px;background:rgba(90,215,255,.07);
+  border:1px solid rgba(255,162,87,.45);border-radius:6px;background:rgba(255,162,87,.07);
   transition:.15s;white-space:nowrap}
-.back:hover,.back:active{background:rgba(90,215,255,.2);border-color:var(--cy);
-  box-shadow:0 0 18px rgba(90,215,255,.35)}
+.back:hover,.back:active{background:rgba(255,162,87,.2);border-color:var(--cy);
+  box-shadow:0 0 18px rgba(255,162,87,.35)}
 
 /* ---- kpi strip ---- */
 .kpis{grid-area:kpis;display:flex;flex-wrap:wrap;gap:6px 30px;
-  border-bottom:1px solid rgba(90,215,255,.14);padding:2px 0 10px}
+  border-bottom:1px solid rgba(255,162,87,.14);padding:2px 0 10px}
 .kpi .label{margin-bottom:1px}
 .kpi b{font-size:21px;color:#fff;font-weight:600}
-.kpi b.glow{text-shadow:0 0 10px rgba(90,215,255,.6)}
+.kpi b.glow{text-shadow:0 0 10px rgba(255,162,87,.6)}
 
 /* ---- money column ---- */
 .left{grid-area:left;display:flex;flex-direction:column;justify-content:center;gap:22px}
@@ -1373,7 +1376,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
 .core{grid-area:core;display:flex;flex-direction:column;align-items:center;
   justify-content:center;min-height:0}
 .reactor{width:min(40vh,380px);height:min(40vh,380px);
-  filter:drop-shadow(0 0 26px rgba(90,215,255,.35))}
+  filter:drop-shadow(0 0 26px rgba(255,162,87,.35))}
 .reactor circle,.reactor line,.reactor path{fill:none;stroke:var(--cy);
   vector-effect:non-scaling-stroke}
 .rSeg{stroke-width:7;stroke-dasharray:52 26;opacity:.85;
@@ -1402,19 +1405,19 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
 .right{grid-area:right;display:flex;flex-direction:column;justify-content:center;gap:12px}
 .bar .label{display:flex;justify-content:space-between;margin-bottom:3px}
 .bar .label span:last-child{color:var(--cy2)}
-.track{height:7px;background:rgba(90,215,255,.10);border-radius:2px;overflow:hidden}
-.fill{height:100%;background:linear-gradient(90deg,rgba(90,215,255,.35),var(--cy));
-  box-shadow:0 0 10px rgba(90,215,255,.6);width:0;transition:width .9s ease}
+.track{height:7px;background:rgba(255,162,87,.10);border-radius:2px;overflow:hidden}
+.fill{height:100%;background:linear-gradient(90deg,rgba(255,162,87,.35),var(--cy));
+  box-shadow:0 0 10px rgba(255,162,87,.6);width:0;transition:width .9s ease}
 
 /* ---- mission log ---- */
-.feed{grid-area:feed;border-top:1px solid rgba(90,215,255,.22);padding-top:10px;
+.feed{grid-area:feed;border-top:1px solid rgba(255,162,87,.22);padding-top:10px;
   overflow:hidden}
 .feed .label{margin-bottom:8px}
 #feedlines{overflow:hidden;font-size:12.5px}
 #feedlines div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  padding:1.5px 0;color:#a8d4ea}
+  padding:1.5px 0;color:#e6c4a8}
 #feedlines div.fresh{animation:landed 1.6s ease-out}
-@keyframes landed{0%{background:rgba(90,215,255,.22);transform:translateX(-6px)}
+@keyframes landed{0%{background:rgba(255,162,87,.22);transform:translateX(-6px)}
   100%{background:transparent;transform:none}}
 #feedlines .t{color:var(--dim)}
 #feedlines .k{color:var(--cy2)}
@@ -1424,35 +1427,35 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
 /* ---- ask console ---- */
 #askbar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;
   align-items:center;gap:12px;padding:11px 22px;
-  background:rgba(1,6,12,.985);backdrop-filter:blur(7px);
-  border-top:1px solid rgba(90,215,255,.3)}
+  background:rgba(8,5,3,.985);backdrop-filter:blur(7px);
+  border-top:1px solid rgba(255,162,87,.3)}
 #askbar .caret{color:var(--cy);font-size:13px;letter-spacing:.2em;flex:0 0 auto}
 #askbar input{flex:1;min-width:0;background:transparent;border:0;outline:0;
   color:var(--ink);font:inherit;font-size:14px;letter-spacing:.04em}
 #askbar input::placeholder{color:var(--dim);letter-spacing:.14em}
 #askbar .hint{color:var(--dim);font-size:10px;letter-spacing:.18em;flex:0 0 auto}
-body.alert #askbar{border-top-color:rgba(255,180,84,.4)}
+body.alert #askbar{border-top-color:rgba(255,95,67,.45)}
 
 /* Starts below the top bar so the clock and the way out stay reachable while
    the console is open. Near-opaque — the HUD behind it must not compete with
    the text. */
 #console{position:fixed;left:0;right:0;bottom:0;top:64px;z-index:14;
   display:none;flex-direction:column;padding:14px 22px 60px;
-  background:rgba(1,6,12,.985);backdrop-filter:blur(7px);
-  border-top:1px solid rgba(90,215,255,.16)}
+  background:rgba(8,5,3,.985);backdrop-filter:blur(7px);
+  border-top:1px solid rgba(255,162,87,.16)}
 #console.on{display:flex}
 #console .chead{display:flex;align-items:center;gap:12px;flex:0 0 auto;
-  border-bottom:1px solid rgba(90,215,255,.22);padding-bottom:9px;margin-bottom:12px}
+  border-bottom:1px solid rgba(255,162,87,.22);padding-bottom:9px;margin-bottom:12px}
 #console .chead b{color:var(--cy2);font-size:12px;letter-spacing:.28em;font-weight:600}
 #console .x{margin-left:auto;color:var(--dim);cursor:pointer;font-size:11px;
-  letter-spacing:.18em;border:1px solid rgba(90,215,255,.3);border-radius:5px;
+  letter-spacing:.18em;border:1px solid rgba(255,162,87,.3);border-radius:5px;
   padding:5px 11px;background:transparent;font-family:inherit}
 #console .x:hover{color:var(--cy);border-color:var(--cy)}
 #lines{flex:1;overflow-y:auto;font-size:13.5px;line-height:1.62;padding-right:6px}
 #lines .turn{margin-bottom:15px;max-width:900px}
 #lines .who{font-size:10px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
 #lines .you .who{color:var(--cy)}
-#lines .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#cfe9f8}
+#lines .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#f2ddc9}
 #lines .you .body{color:var(--cy2)}
 #lines .bad .body{color:var(--red)}
 #lines .body::after{content:"";display:inline-block;width:7px;height:14px;
@@ -1460,7 +1463,7 @@ body.alert #askbar{border-top-color:rgba(255,180,84,.4)}
 #lines .typing .body::after{opacity:1;animation:blink 1s step-end infinite}
 
 /* ---- boot sequence ---- */
-#boot{position:fixed;inset:0;z-index:20;background:#02080f;padding:9vh 8vw;
+#boot{position:fixed;inset:0;z-index:20;background:#0a0604;padding:9vh 8vw;
   font-size:13px;color:var(--cy);letter-spacing:.06em}
 #boot div{opacity:0;animation:bootline .25s forwards}
 @keyframes bootline{to{opacity:1}}
@@ -1520,14 +1523,14 @@ body.alert #askbar{border-top-color:rgba(255,180,84,.4)}
     <svg class="reactor" viewBox="0 0 400 400" aria-hidden="true">
       <defs>
         <radialGradient id="cg" cx="50%" cy="50%">
-          <stop offset="0%" stop-color="#eaffff" stop-opacity="1"/>
-          <stop offset="34%" stop-color="#9fe8ff" stop-opacity=".95"/>
-          <stop offset="70%" stop-color="#2ea8dd" stop-opacity=".55"/>
-          <stop offset="100%" stop-color="#0a4a6e" stop-opacity="0"/>
+          <stop offset="0%" stop-color="#fff6ec" stop-opacity="1"/>
+          <stop offset="34%" stop-color="#ffd0a0" stop-opacity=".95"/>
+          <stop offset="70%" stop-color="#d9772f" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="#6b3410" stop-opacity="0"/>
         </radialGradient>
         <linearGradient id="sw" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="#5ad7ff" stop-opacity="0"/>
-          <stop offset="100%" stop-color="#5ad7ff" stop-opacity=".55"/>
+          <stop offset="0%" stop-color="#ffa257" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#ffa257" stop-opacity=".55"/>
         </linearGradient>
       </defs>
       <circle class="rSeg"  cx="200" cy="200" r="186"/>
@@ -1905,7 +1908,7 @@ def manifest():
     return {
         "name": "Solo Studio", "short_name": "Solo Studio",
         "start_url": "/", "display": "standalone",
-        "background_color": "#08090c", "theme_color": "#08090c",
+        "background_color": "#100d0b", "theme_color": "#100d0b",
         "icons": [
             {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
@@ -1930,15 +1933,15 @@ PIN_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Solo Studio</title>{{ pwa_meta|safe }}
-<style>body{background:#04101d;color:#dff3ff;font:16px -apple-system,sans-serif;
+<style>body{background:#100d0b;color:#f5ece6;font:16px -apple-system,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 form{text-align:center;padding:24px}
-h1{font-size:20px;letter-spacing:.3em;color:#9fe8ff;font-weight:600}
+h1{font-size:20px;letter-spacing:.3em;color:#ffd0a0;font-weight:600}
 input{font-size:28px;text-align:center;letter-spacing:.4em;width:220px;padding:12px;
-border-radius:10px;border:1px solid #2a5a7a;background:#0a1f33;color:#fff;margin:18px 0}
+border-radius:10px;border:1px solid #5c3a24;background:#1f1814;color:#f5ece6;margin:18px 0}
 button{font-size:16px;font-weight:600;padding:12px 40px;border-radius:10px;border:0;
-background:#2563eb;color:#fff}
-.err{color:#ff8f8f;min-height:1.4em}</style></head>
+background:#ff8a5b;color:#22100a}
+.err{color:#ff9f9f;min-height:1.4em}</style></head>
 <body><form method="post">
 <h1>SOLO STUDIO</h1>
 <div class="err">{{ error or "" }}</div>
@@ -1967,15 +1970,15 @@ LOGIN_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Solo Studio</title>{{ pwa_meta|safe }}
-<style>body{background:#04101d;color:#dff3ff;font:16px -apple-system,sans-serif;
+<style>body{background:#100d0b;color:#f5ece6;font:16px -apple-system,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 form{text-align:center;padding:24px;width:100%;max-width:340px}
-h1{font-size:20px;letter-spacing:.3em;color:#9fe8ff;font-weight:600}
+h1{font-size:20px;letter-spacing:.3em;color:#ffd0a0;font-weight:600}
 input{font-size:18px;width:100%;padding:14px;border-radius:10px;
-border:1px solid #2a5a7a;background:#0a1f33;color:#fff;margin:18px 0}
+border:1px solid #5c3a24;background:#1f1814;color:#f5ece6;margin:18px 0}
 button{font-size:16px;font-weight:600;padding:14px 40px;border-radius:10px;
-border:0;background:#2563eb;color:#fff;width:100%}
-.err{color:#ff8f8f;min-height:1.4em;font-size:14px}</style></head>
+border:0;background:#ff8a5b;color:#22100a;width:100%}
+.err{color:#ff9f9f;min-height:1.4em;font-size:14px}</style></head>
 <body><form method="post">
 <h1>SOLO STUDIO</h1>
 <div class="err">{{ error or "" }}</div>
@@ -2332,10 +2335,10 @@ def _team_roster():
 
     def state(ready: bool, on: bool = True, missing: str = ""):
         if not ready:
-            return "NEEDS KEY", "rgba(255,123,114,.15)", "#fca5a5", missing
+            return "NEEDS KEY", "rgba(255,107,107,.16)", "#ff9f9f", missing
         if not on:
-            return "STANDBY", "rgba(255,255,255,.07)", "#94a3b8", ""
-        return "ON DUTY", "rgba(91,217,138,.15)", "#8ce8ac", ""
+            return "STANDBY", "rgba(255,186,142,.08)", "#a3907f", ""
+        return "ON DUTY", "rgba(143,217,138,.16)", "#a8e5a3", ""
 
     auto = bool(cfg.get("autopilot_enabled"))
     members = [
@@ -2558,9 +2561,9 @@ RESTARTING_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Restarting…</title>{{ pwa_meta|safe }}
-<style>body{background:#04101d;color:#dff3ff;font:16px -apple-system,sans-serif;
+<style>body{background:#100d0b;color:#f5ece6;font:16px -apple-system,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;
-text-align:center}h1{font-size:19px;letter-spacing:.2em;color:#9fe8ff}
+text-align:center}h1{font-size:19px;letter-spacing:.2em;color:#ffd0a0}
 .dot{animation:b 1.2s infinite}@keyframes b{50%{opacity:.25}}</style></head>
 <body><div><h1>RESTARTING<span class="dot">…</span></h1>
 <p class="muted">This page comes back on its own.</p></div>

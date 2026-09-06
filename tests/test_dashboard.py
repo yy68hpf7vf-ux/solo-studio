@@ -97,27 +97,51 @@ class PhoneGateTest(unittest.TestCase):
 
     # -- theme --------------------------------------------------------------
 
+    @staticmethod
+    def _lum(hex6):
+        """Relative luminance 0..1, so the check is about how pale a colour is
+        rather than which theme happens to be installed."""
+        h = hex6.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+        return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+
+    def _theme_bg(self):
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        m = re.search(r"--bg:\s*(#[0-9a-fA-F]{3,6})", html)
+        self.assertIsNotNone(m, "the shell must declare a --bg token")
+        return m.group(1)
+
     def test_shell_is_dark(self):
-        """Every page shares one dark shell — no pale panels sneaking back in."""
+        """Whatever palette is installed, the app is a dark app."""
         html = self.client.get(
             "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
         self.assertIn("color-scheme:dark", html.replace(" ", ""))
-        self.assertIn("--bg:#08090c", html.replace(" ", ""))
+        self.assertLess(self._lum(self._theme_bg()), 0.15)
 
     def test_no_page_paints_a_light_panel(self):
-        """A near-white background on any page would break the dark theme."""
-        import re
-        pale = re.compile(r"background(?:-color)?:\s*(#(?:fff|ffffff|f[0-9a-f]{5}|"
-                          r"e[0-9a-f]{5})\b)", re.I)
+        """A pale surface anywhere would break the dark theme. Saturated accents
+        are fine — this is about paleness, not brightness."""
+        pale = re.compile(r"background(?:-color)?:\s*(#[0-9a-fA-F]{3,6})\b")
         for path in ("/", "/approve", "/team", "/activity", "/ask",
                      "/setup", "/updates"):
             html = self.client.get(
                 path, environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
-            # the QR code must stay light — scanners need the contrast
+            # the QR code must stay light — phone cameras need the contrast
             html = re.sub(r"<svg\b.*?</svg>", "", html, flags=re.S)
-            with self.subTest(page=path):
-                self.assertIsNone(pale.search(html),
-                                  f"{path} paints {pale.search(html)}")
+            for colour in pale.findall(html):
+                with self.subTest(page=path, colour=colour):
+                    self.assertLess(self._lum(colour), 0.85,
+                                    f"{path} paints a pale surface {colour}")
+
+    def test_installed_icon_matches_the_app_theme(self):
+        m = self.client.get("/manifest.webmanifest",
+                            environ_base={"REMOTE_ADDR": "127.0.0.1"}).json
+        self.assertEqual(m["display"], "standalone")
+        self.assertEqual(m["theme_color"], self._theme_bg())
+        self.assertEqual(m["background_color"], self._theme_bg())
 
     # -- getting it onto a phone ---------------------------------------------
 
@@ -164,13 +188,6 @@ class PhoneGateTest(unittest.TestCase):
                              environ_base={"REMOTE_ADDR": "127.0.0.1"})
         self.assertEqual(r.status_code, 302)
         self.assertIn("/setup", r.headers["Location"])
-
-    def test_installed_icon_matches_the_app_theme(self):
-        m = self.client.get("/manifest.webmanifest",
-                            environ_base={"REMOTE_ADDR": "127.0.0.1"}).json
-        self.assertEqual(m["theme_color"], "#08090c")
-        self.assertEqual(m["background_color"], "#08090c")
-        self.assertEqual(m["display"], "standalone")
 
     # -- the living backdrop -------------------------------------------------
 

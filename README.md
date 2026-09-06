@@ -2,8 +2,8 @@
 
 An automated lead-gen + sales pipeline for a one-person web design studio.
 
-Dark by design — deep black, soft glass panels and rounded corners, to sit
-comfortably next to the rest of your Mac. Ribbons of light drift behind the
+Dark by design — warm charcoal, firelight accents, soft glass panels and
+rounded corners. Ribbons of light drift behind the
 whole app: they lean as you move the pointer (or tilt your phone), brighten as
 the pipeline gets busier, and flare for a moment whenever a reply or a payment
 lands. If your device can't keep that smooth, the app measures its own frame
