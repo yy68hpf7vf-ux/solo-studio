@@ -20,8 +20,8 @@ import webbrowser
 from collections import defaultdict
 from datetime import timedelta
 
-from flask import (Flask, abort, flash, redirect, render_template_string,
-                   request, session, url_for)
+from flask import (Flask, abort, flash, jsonify, redirect,
+                   render_template_string, request, session, url_for)
 
 import solo_studio_agent as core
 
@@ -344,6 +344,7 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
     font-size:12px;margin-left:3px">{{ pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('team_page') }}">Team</a>
   <a href="{{ url_for('activity') }}">Activity</a>
+  <a href="{{ url_for('ask_page') }}">Ask</a>
   <a href="{{ url_for('setup') }}">Setup</a>
   <a href="{{ url_for('updates_page') }}">Updates{% if update_ready %}
     <span style="color:#4ade80">●</span>{% endif %}</a>
@@ -774,6 +775,125 @@ Lower is not better — it just uses more of your API allowance.</p>
 </div>
 {% endblock %}
 """
+
+ASK = """
+{% extends "base" %}{% block body %}
+<style>
+.chat{display:flex;flex-direction:column;gap:12px;min-height:46vh;
+  max-height:62vh;overflow-y:auto;padding:4px 2px 8px}
+.msg{max-width:min(720px,86%);padding:10px 14px;border-radius:13px;
+  white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
+.msg.you{align-self:flex-end;background:var(--acc);color:#fff;
+  border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:#f1f5f9;border-bottom-left-radius:4px}
+.msg.bad{align-self:flex-start;background:#fee2e2;color:#991b1b}
+.msg.think{align-self:flex-start;background:#f1f5f9;color:var(--mut)}
+.askbar{display:flex;gap:8px;margin-top:12px}
+.askbar textarea{min-height:46px;max-height:150px;resize:vertical;flex:1}
+.starters{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.starters button{font:inherit;font-size:13px;background:#fff;cursor:pointer;
+  border:1px solid var(--line);border-radius:999px;padding:6px 13px;color:var(--ink)}
+.starters button:hover{border-color:var(--acc);color:var(--acc)}
+@media (max-width:800px){.chat{max-height:none}.msg{max-width:92%}}
+</style>
+<div class="card">
+<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+  <h1 style="margin:0">Ask</h1>
+  <span class="muted">Knows your leads, your numbers and how the app works.</span>
+  <form method="post" action="{{ url_for('ask_clear') }}" style="margin-left:auto">
+    <button class="btn btn-sm">Clear chat</button></form>
+</div>
+
+{% if not has_key %}
+<div class="warnbar" style="margin-top:14px">
+  <span>Add your <b>Anthropic (Claude)</b> key on Setup and I can start
+  answering — it's the same key the app uses to design sites.</span>
+  <a class="btn" href="{{ url_for('setup') }}">Go to Setup</a>
+</div>
+{% endif %}
+
+<div class="chat" id="chat">
+{% if not history %}
+  <div class="msg bot">Hi{% if config.your_name %} {{ config.your_name.split()[0] }}{% endif %},
+I'm built into Solo Studio, so I can see your pipeline as it stands right now.
+Ask me anything about your leads, your setup, or what to do next.
+
+I can't send emails or take payments myself — I'll tell you which button to
+press for that.</div>
+{% endif %}
+{% for m in history %}
+  <div class="msg {{ 'you' if m.role == 'user' else 'bot' }}">{{ m.content }}</div>
+{% endfor %}
+</div>
+
+<div class="starters" id="starters">
+  <button type="button">What should I do next?</button>
+  <button type="button">How's my pipeline looking?</button>
+  <button type="button">Is anything stuck or waiting on me?</button>
+  <button type="button">Walk me through my next API key</button>
+</div>
+
+<form class="askbar" id="askform">
+  <textarea id="q" placeholder="Ask anything…" autocomplete="off"></textarea>
+  <button class="btn btn-primary" id="send">Send</button>
+</form>
+</div>
+
+<script>
+(function(){
+  var chat = document.getElementById('chat'),
+      form = document.getElementById('askform'),
+      box  = document.getElementById('q'),
+      send = document.getElementById('send'),
+      starters = document.getElementById('starters');
+
+  function bubble(cls, text){
+    var d = document.createElement('div');
+    d.className = 'msg ' + cls;
+    d.textContent = text;
+    chat.appendChild(d);
+    chat.scrollTop = chat.scrollHeight;
+    return d;
+  }
+
+  function ask(text){
+    text = (text || '').trim();
+    if (!text || send.disabled) return;
+    bubble('you', text);
+    box.value = '';
+    starters.style.display = 'none';
+    send.disabled = true;
+    var thinking = bubble('think', 'Thinking…');
+    fetch({{ url_for('ask_send')|tojson }}, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      thinking.remove();
+      bubble(d.ok ? 'bot' : 'bad', d.ok ? d.reply : (d.error || 'Something went wrong.'));
+    })
+    .catch(function(){
+      thinking.remove();
+      bubble('bad', "I couldn't reach Claude just then. Check your internet and try again.");
+    })
+    .finally(function(){ send.disabled = false; box.focus(); });
+  }
+
+  form.addEventListener('submit', function(e){ e.preventDefault(); ask(box.value); });
+  box.addEventListener('keydown', function(e){          // Enter sends, Shift+Enter newline
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(box.value); }
+  });
+  starters.addEventListener('click', function(e){
+    if (e.target.tagName === 'BUTTON') ask(e.target.textContent);
+  });
+  chat.scrollTop = chat.scrollHeight;
+})();
+</script>
+{% endblock %}
+"""
+
 
 SETUP_TEST = """
 {% extends "base" %}{% block body %}
@@ -2041,6 +2161,78 @@ def resolve_event(event_id):
 
 # Each key, with click-by-click directions to go and get it. Order follows the
 # pipeline: find the business, email it, design the site, host it, get paid.
+def assistant_snapshot() -> str:
+    """A plain-text picture of the owner's pipeline right now, for the helper.
+
+    Bounded on purpose — a handful of lines per section, so the brief stays
+    small however many leads pile up.
+    """
+    db, cfg = STATE.db, STATE.config
+    out = [f"LIVE SNAPSHOT (taken {core._now()})"]
+
+    missing = [k["name"] for k in KEY_FIELDS if not cfg.get(k["field"])]
+    out.append("Setup: " + ("every API key is saved." if not missing else
+               "still missing " + ", ".join(missing) + "."))
+    for field, label in (("your_name", "name"), ("mailing_address", "mailing address")):
+        if not cfg.get(field):
+            out.append(f"Their {label} is not filled in on Setup yet.")
+    out.append("Autopilot is %s. Price per site: $%s. Daily cold-email cap: %s."
+               % ("ON" if cfg.get("autopilot_enabled") else "OFF",
+                  core.fmt_price(cfg.get("site_price_usd", 500)),
+                  cfg.get("daily_send_cap", 20)))
+    out.append("Sent today: %d cold emails." % db.sends_today())
+
+    leads = db.all_leads()
+    if not leads:
+        out.append("\nNo leads yet — the pipeline is empty.")
+    else:
+        stages = {}
+        for lead in leads:
+            stages[lead["stage"]] = stages.get(lead["stage"], 0) + 1
+        out.append("\nLEADS BY STAGE (%d total): " % len(leads)
+                   + ", ".join(f"{k} {v}" for k, v in sorted(stages.items())))
+        out.append("Money: $%d collected, $%d in payment links still out."
+                   % (db.revenue_cents() // 100, db.pending_cents() // 100))
+
+        waiting = db.leads_awaiting_approval()
+        if waiting:
+            out.append("\nWAITING FOR THEIR APPROVAL (%d) — on the Approve page:"
+                       % len(waiting))
+            for lead in waiting[:8]:
+                out.append("  - %s (%s)" % (lead["name"],
+                                            lead["email"] or "no email address yet"))
+            if len(waiting) > 8:
+                out.append("  ...and %d more." % (len(waiting) - 8))
+
+        moving = [l for l in leads if l["stage"] in (
+            core.STAGE_CONTACTED, core.STAGE_PREVIEW_SENT,
+            core.STAGE_PAYMENT_LINK_SENT, core.STAGE_PAID)]
+        if moving:
+            out.append("\nDEALS IN FLIGHT:")
+            for lead in moving[:10]:
+                out.append("  - %s: %s" % (lead["name"], lead["stage"]))
+
+        stuck = [l for l in leads if l["stage"] == core.STAGE_ERROR]
+        if stuck:
+            out.append("\nERRORED (retryable from the lead's page):")
+            for lead in stuck[:5]:
+                out.append("  - %s: %s" % (lead["name"], (lead["error"] or "")[:160]))
+
+    attention = db.attention_events()
+    if attention:
+        out.append("\nNEEDS THEIR ATTENTION (%d):" % len(attention))
+        for ev in attention[:6]:
+            out.append("  - %s" % (ev["detail"] or ev["kind"])[:200])
+
+    recent = db.recent_events(12)
+    if recent:
+        out.append("\nRECENT ACTIVITY (newest first):")
+        for ev in recent:
+            out.append("  - [%s] %s: %s" % (ev["created_at"][11:16], ev["kind"],
+                                            (ev["detail"] or "")[:140]))
+    return "\n".join(out)
+
+
 KEY_FIELDS = [
     {
         "field": "anthropic_api_key",
@@ -2131,6 +2323,41 @@ KEY_FIELDS = [
                 "be adding businesses by hand.",
     },
 ]
+
+
+@app.get("/ask")
+def ask_page():
+    return _render(ASK, history=STATE.db.chat_history(),
+                   has_key=bool(STATE.config.get("anthropic_api_key")))
+
+
+@app.post("/ask/send")
+def ask_send():
+    """Answer one question. Advisory only — nothing here can act on the pipeline."""
+    message = ((request.get_json(silent=True) or {}).get("message") or "").strip()
+    if not message:
+        return jsonify(ok=False, error="Ask me something first.")
+    if len(message) > 4000:
+        message = message[:4000]
+    if not STATE.config.get("anthropic_api_key"):
+        return jsonify(ok=False, error="Add your Anthropic (Claude) key on the "
+                                       "Setup page and I can start answering.")
+    db = STATE.db
+    db.chat_add("user", message)
+    history = [{"role": m["role"], "content": m["content"]}
+               for m in db.chat_history()]
+    try:
+        reply = STATE.services.assistant_reply(history, assistant_snapshot())
+    except Exception as e:                       # network, bad key, rate limit
+        return jsonify(ok=False, error=f"Couldn't reach Claude: {str(e)[:200]}")
+    db.chat_add("assistant", reply)
+    return jsonify(ok=True, reply=reply)
+
+
+@app.post("/ask/clear")
+def ask_clear():
+    STATE.db.chat_clear()
+    return redirect(url_for("ask_page"))
 
 
 @app.route("/setup", methods=["GET", "POST"])

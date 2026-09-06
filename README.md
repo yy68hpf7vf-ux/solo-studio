@@ -190,6 +190,24 @@ from anywhere, on any network.
 So the loop is: **find → you add an email → you approve → the machine closes
 the deal.**
 
+### Ask — the helper built into the app
+
+The **Ask** page is a chat with Claude that already knows your business. It sees
+your live pipeline every time you ask something: which leads are waiting for
+approval, what's in flight, what's errored, what needs your attention, your
+revenue, and which API keys are still missing. So "what should I do next?" gets
+a real answer about your actual leads, not a generic one.
+
+It's **advisory only, by design.** It cannot send an email, approve a lead,
+create a payment link, deploy a site, move money, or change a setting — no tools
+are wired up to it, so it structurally cannot act however you phrase the
+request. It tells you which page and which button instead. The payment gate is
+described to it as something never to work around.
+
+Your chat is saved in the app's database, so it's still there tomorrow and on
+your phone. **Clear chat** wipes it. Answers use your own Anthropic key — the
+same one that designs the sites — so they cost a fraction of a cent each.
+
 ### The team
 
 Open the **Team** page to see all eight specialists, what each has done, and
@@ -227,6 +245,9 @@ right every time, and an LLM adds risk there with no upside.
   and payments within about six seconds and refresh on their own. If you're
   part-way through typing, they don't yank the page out from under you: a
   "New activity — tap to refresh" pill appears instead.
+- **Ask:** stuck on anything — a key, a lead, what to do next — ask the app
+  itself on the **Ask** page instead of going somewhere else. It can see your
+  pipeline; it can't press buttons for you.
 - **Autopilot:** with it on, the app checks replies and payments every minute
   and drives every conversation to done. Anything ambiguous
   (questions, change requests, unknown senders) is parked in **Needs your
@@ -253,6 +274,8 @@ the EU's ePrivacy rules are much stricter).
 - `tests/test_pipeline.py` — state-machine stress tests against fake
   services: payment gating, double-charge/double-preview guards, crash
   resume, concurrency races.
+- `tests/test_assistant.py` — the Ask helper: what it can see, what it stores,
+  and that it is never handed tools it could act with.
 
 ```bash
 pip install flask requests anthropic inkbox

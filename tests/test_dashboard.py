@@ -85,6 +85,16 @@ class PhoneGateTest(unittest.TestCase):
             s.clear()
         self.assertEqual(self.remote("get", "/live").status_code, 302)
 
+    def test_ask_requires_auth_from_other_devices(self):
+        """The Ask page shows lead names and revenue — it must be gated."""
+        self._set(phone_access_enabled=True, phone_pin="2468")
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        self.assertEqual(self.remote("get", "/ask").status_code, 302)
+        self.assertEqual(
+            self.remote("post", "/ask/send", json={"message": "hi"}).status_code, 302)
+        self.assertEqual(self.remote("post", "/ask/clear").status_code, 302)
+
     # -- JARVIS ------------------------------------------------------------
     # The exit link once existed but was hidden by `.back{display:none}` in
     # the phone stylesheet, which left no way off the JARVIS screen on a

@@ -355,6 +355,12 @@ CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY,
+    role TEXT NOT NULL,            -- 'user' or 'assistant'
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -548,6 +554,24 @@ class Database:
                 "INSERT INTO events (lead_id, kind, detail, needs_attention, created_at)"
                 " VALUES (?,?,?,?,?)",
                 (lead_id, kind, detail, 1 if needs_attention else 0, _now()))
+
+    # -- built-in assistant chat -------------------------------------------
+
+    def chat_history(self, limit: int = 40) -> list[sqlite3.Row]:
+        """Oldest-first, capped to the most recent `limit` turns."""
+        rows = self._conn().execute(
+            "SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return list(reversed(rows))
+
+    def chat_add(self, role: str, content: str) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO chat_messages (role, content, created_at)"
+                      " VALUES (?,?,?)", (role, content, _now()))
+
+    def chat_clear(self) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM chat_messages")
 
     def recent_events(self, limit: int = 50) -> list[sqlite3.Row]:
         return self._conn().execute(
@@ -844,6 +868,90 @@ class Services:
             if intent in text:
                 return intent
         return "unclear"
+
+    ASSISTANT_BRIEF = """You are the built-in helper inside Solo Studio, a Mac \
+app that runs a one-person web design business end to end. You are talking to \
+its owner, who is not a programmer. Be warm, brief and concrete.
+
+HOW SOLO STUDIO WORKS
+Leads move through fixed stages, in order:
+  found -> contacted -> building_preview -> preview_sent ->
+  sending_payment_link -> payment_link_sent -> paid -> deploying_final -> delivered
+Plus not_interested (they said no) and error (something failed; it can be retried).
+
+1. Scout finds local businesses with no website (Google Places).
+2. Researcher hunts each one's public email with web search. It only SUGGESTS;
+   the owner accepts or rejects every address.
+3. Copywriter drafts the cold email. Nothing is ever sent until the owner taps
+   "Approve & send" on the Approve page. There is no auto-send.
+4. Triage reads replies and judges interest. Anything ambiguous is parked in
+   "Needs your attention" rather than guessed at.
+5. Designer builds a one-page site; Deployer publishes a WATERMARKED preview to
+   Netlify and emails the link.
+6. On a second positive reply, Biller emails a Stripe payment link.
+7. Delivery ships the clean, watermark-free site ONLY after Stripe confirms the
+   payment cleared, and emails the live link.
+
+THE PAYMENT GATE — never suggest working around this. The final site cannot be
+delivered unless Stripe itself reports the payment as paid. It is re-checked at
+delivery time, and there is no button or setting that skips it. If the owner
+asks to send a site before payment, tell them plainly that the app will not do
+that, and suggest sending another preview instead.
+
+WHERE THINGS ARE IN THE APP
+- Dashboard — every lead and its stage.
+- Approve — found businesses waiting for the owner's OK, showing the exact email
+  word for word. Also where a missing email address gets pasted in.
+- Team — the eight specialists and what each has done.
+- Activity — the full log.
+- Setup — API keys (with click-by-click directions), business details, the cold
+  email template, automatic lead hunting, phone access, and an Advanced section.
+- Updates — install a new version, then restart.
+- JARVIS — the live stats screen.
+
+WHAT YOU CAN AND CANNOT DO
+You can see the owner's live pipeline (below) and answer anything about it, walk
+them through setup, explain why a lead is stuck, suggest wording, and do the
+arithmetic on their numbers.
+You CANNOT act. You cannot send email, approve a lead, create a payment link,
+deploy a site, move money, or change any setting — you have no ability to do any
+of it. So never say you have done something or will do it later. Instead name
+the page and the button: "open Approve and tap Approve & send on Rivera
+Plumbing". If something needs a decision only they can make, say so.
+
+STYLE
+Short paragraphs, plain words, no jargon or code unless they ask. Two or three
+sentences is usually enough. Use their real numbers from the snapshot rather
+than speaking generally. If the snapshot does not contain the answer, say what
+you do not know instead of inventing a lead, a figure, or a setting."""
+
+    def assistant_reply(self, history: list[dict], snapshot: str) -> str:
+        """Answer the owner's question about their own pipeline.
+
+        Advisory only: no tools are wired up, so this cannot act on anything.
+        """
+        client = self._get_anthropic()
+        model = self.config.get("anthropic_model") or "claude-opus-5"
+        messages = [{"role": m["role"], "content": m["content"]}
+                    for m in history if m.get("content")]
+        if not messages:
+            raise ServiceError("Nothing to answer.")
+        with client.messages.stream(
+            model=model,
+            max_tokens=8000,
+            output_config={"effort": "medium"},
+            system=[{"type": "text",
+                     "text": self.ASSISTANT_BRIEF,
+                     "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": snapshot}],
+            messages=messages,
+        ) as stream:
+            response = stream.get_final_message()
+        if response.stop_reason == "refusal":
+            return ("I wasn't able to answer that one. Try rephrasing it, or ask "
+                    "me something about your leads or setup.")
+        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        return text or "I didn't have anything to add there — try asking again."
 
     def research_email(self, lead: dict) -> dict:
         """Look up a business's public contact email using Claude's web search.
