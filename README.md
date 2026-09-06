@@ -106,9 +106,10 @@ The Mac app is the engine, so it must be open for the phone to see anything.
 
 1. On the Mac, open **Setup** → tick **"Let my phone open this dashboard"**,
    set a 4–8 digit PIN, click **Save settings**.
-2. **Quit and reopen Solo Studio** (this is what switches on phone access).
-3. Back on the Setup page, a **QR code** appears. Point your phone's camera at
-   it and tap the link, then enter your PIN.
+2. Click **Restart Solo Studio** on the button that appears. It's back in a few
+   seconds — that restart is what opens it to your Wi-Fi.
+3. A **QR code** appears on the Setup page. Point your phone's camera at it and
+   tap the link, then enter your PIN.
 4. Tap **Share → Add to Home Screen**. You now have a Solo Studio icon.
 
 **Notifications (works anywhere, not just at home):** tick **"Push

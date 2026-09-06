@@ -119,6 +119,59 @@ class PhoneGateTest(unittest.TestCase):
                 self.assertIsNone(pale.search(html),
                                   f"{path} paints {pale.search(html)}")
 
+    # -- getting it onto a phone ---------------------------------------------
+
+    def test_setup_never_nests_a_form(self):
+        """Browsers silently drop a form inside another form, so the button
+        would render and do nothing. Keep every form top-level."""
+        import re
+        # turn on the branch that renders the restart button, or there is
+        # nothing here to nest
+        self._set(phone_access_enabled=True, phone_pin="4821")
+        self.dash.BOUND_HOST = "127.0.0.1"
+        html = self.client.get(
+            "/setup", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        depth = 0
+        for tag in re.findall(r"<(/?)form\b", html):
+            depth += -1 if tag == "/" else 1
+            self.assertLessEqual(depth, 1, "a form is nested inside another form")
+        self.assertEqual(depth, 0, "unbalanced form tags")
+
+    def test_phone_offers_a_restart_when_not_yet_listening(self):
+        self._set(phone_access_enabled=True, phone_pin="4821")
+        self.dash.BOUND_HOST = "127.0.0.1"
+        html = self.client.get(
+            "/setup", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        self.assertIn('form="phone-restart"', html)
+        self.assertIn('id="phone-restart"', html)
+
+    def test_phone_shows_the_qr_once_listening(self):
+        self._set(phone_access_enabled=True, phone_pin="4821")
+        self.dash.BOUND_HOST = "0.0.0.0"
+        try:
+            html = self.client.get(
+                "/setup", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+            self.assertNotIn('form="phone-restart"', html)
+            self.assertIn("Add to Home Screen", html)
+        finally:
+            self.dash.BOUND_HOST = "127.0.0.1"
+
+    def test_restart_without_a_launcher_does_not_quit_on_you(self):
+        """Run by hand there is nothing to bring the app back, so it must say
+        so rather than exiting."""
+        self.dash.HAVE_LAUNCHER = False
+        r = self.client.post("/action/restart", data={"back": "/setup"},
+                             environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/setup", r.headers["Location"])
+
+    def test_installed_icon_matches_the_app_theme(self):
+        m = self.client.get("/manifest.webmanifest",
+                            environ_base={"REMOTE_ADDR": "127.0.0.1"}).json
+        self.assertEqual(m["theme_color"], "#08090c")
+        self.assertEqual(m["background_color"], "#08090c")
+        self.assertEqual(m["display"], "standalone")
+
     # -- the living backdrop -------------------------------------------------
 
     def test_every_page_carries_the_backdrop(self):

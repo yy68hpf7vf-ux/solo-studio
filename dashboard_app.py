@@ -51,6 +51,8 @@ STATE = State()
 # run this as an always-on server. Every request then requires that password —
 # there is deliberately no "local request" bypass, because behind a hosting
 # proxy every request can look local.
+BOUND_HOST = "127.0.0.1"   # set in main(); 0.0.0.0 means the phone can reach us
+HAVE_LAUNCHER = os.environ.get("SOLO_STUDIO_LAUNCHER") == "1"
 CLOUD_PASSWORD = os.environ.get("SOLO_STUDIO_PASSWORD", "").strip()
 CLOUD_MODE = bool(CLOUD_PASSWORD)
 # Version this process started with — compared against what is installed
@@ -98,7 +100,7 @@ PWA_META = (
     '<meta name="apple-mobile-web-app-capable" content="yes">'
     '<meta name="mobile-web-app-capable" content="yes">'
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
-    '<meta name="theme-color" content="#04101d">'
+    '<meta name="theme-color" content="#08090c">'
 )
 
 
@@ -1031,21 +1033,38 @@ sign in, then tap <b>Share → Add to Home Screen</b> for an app icon.</p>
   style="width:auto;margin-right:8px">Let my phone open this dashboard (same Wi-Fi)</label>
 <label>PIN for phone access (4–8 digits)</label>
 <input type="text" name="phone_pin" value="{{ config.phone_pin }}" inputmode="numeric">
-{% if config.phone_access_enabled and config.phone_pin %}
-<div style="display:flex;gap:14px;align-items:flex-start;margin-top:10px">
-  <div>{{ phone_qr|safe }}</div>
-  <div class="muted">
-    <b>Point your phone camera at this code.</b><br>
-    Tap the link it offers, enter your PIN, then tap
-    <b>Share&nbsp;→ Add to Home Screen</b> for an app icon.<br><br>
-    Or type it in your phone's browser:<br>
-    <code style="font-size:15px">http://{{ lan_ip }}:8747</code><br><br>
-    Phone must be on the same Wi-Fi, and Solo Studio must be open on this Mac.
-    Quit and reopen Solo Studio after turning this on.
+{% if not (config.phone_access_enabled and config.phone_pin) %}
+  <p class="muted">Tick the box, pick a PIN, and click <b>Save settings</b>.
+  A QR code appears here to set your phone up.</p>
+
+{% elif not phone_listening %}
+  <div class="note warn" style="margin-top:12px">
+    <div style="font-weight:600">One restart and your phone can reach it</div>
+    <div class="muted" style="margin-top:4px">Solo Studio only opens itself to
+      your Wi-Fi when it starts up. It'll be back in a few seconds.</div>
+    <button form="phone-restart" class="btn btn-primary"
+      style="margin-top:10px">Restart Solo Studio</button>
   </div>
-</div>
-{% else %}<p class="muted">Tick the box, set a PIN, click Save — then quit and reopen
-Solo Studio. A QR code will appear here to set up your phone.</p>{% endif %}
+
+{% else %}
+  <div style="display:flex;gap:16px;align-items:flex-start;margin-top:12px;
+    flex-wrap:wrap">
+    <div>{{ phone_qr|safe }}</div>
+    <div class="muted" style="flex:1;min-width:215px">
+      <ol style="margin:0;padding-left:18px;line-height:1.9">
+        <li>Point your phone's camera at this code, tap the link.</li>
+        <li>Enter your PIN: <b>{{ config.phone_pin }}</b></li>
+        <li>Tap <b>Share</b>, then <b>Add to Home Screen</b>.</li>
+      </ol>
+      <p style="margin:10px 0 0">Or type
+        <code style="font-size:15px">http://{{ lan_ip }}:8747</code>
+        into your phone's browser.</p>
+      <p style="margin:8px 0 0">Works while your phone is on the same Wi-Fi and
+        Solo Studio is open on this Mac. For an icon that works anywhere,
+        put it in the cloud — see the README.</p>
+    </div>
+  </div>
+{% endif %}
 {% endif %}
 </div>
 <div>
@@ -1099,6 +1118,11 @@ Lower is not better — it just uses more of your API allowance.</p>
 <button class="btn btn-primary">Save settings</button>
 <a class="btn" href="{{ url_for('setup_test') }}">Test connections</a>
 </div>
+</form>
+
+<!-- outside the settings form on purpose: a nested form is dropped by browsers -->
+<form id="phone-restart" method="post" action="{{ url_for('do_restart') }}">
+  <input type="hidden" name="back" value="{{ url_for('setup') }}">
 </form>
 </div>
 {% endblock %}
@@ -1881,7 +1905,7 @@ def manifest():
     return {
         "name": "Solo Studio", "short_name": "Solo Studio",
         "start_url": "/", "display": "standalone",
-        "background_color": "#04101d", "theme_color": "#04101d",
+        "background_color": "#08090c", "theme_color": "#08090c",
         "icons": [
             {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
@@ -2512,9 +2536,15 @@ def do_update():
 @app.post("/action/restart")
 def do_restart():
     """Exit with the launcher's restart code; the launcher starts us again."""
+    back = request.form.get("back") or url_for("updates_page")
     if CLOUD_MODE:
         flash("The cloud version restarts itself on deploy.", "err")
-        return redirect(url_for("updates_page"))
+        return redirect(back)
+    if not HAVE_LAUNCHER:
+        # Started by hand rather than from the app icon — nothing would bring
+        # us back, so say so instead of quitting on them.
+        flash("Quit Solo Studio and open it again to finish.", "err")
+        return redirect(back)
 
     def bye():
         time.sleep(0.7)          # let this response reach the browser first
@@ -2922,6 +2952,7 @@ def setup():
     have = sum(1 for k in KEY_FIELDS if STATE.config.get(k["field"]))
     price = core.fmt_price(STATE.config.get("site_price_usd", 500))
     return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=ip,
+                   phone_listening=(CLOUD_MODE or BOUND_HOST == "0.0.0.0"),
                    keys_have=have, keys_missing=len(KEY_FIELDS) - have,
                    price_value=price,
                    phone_qr=qr_svg(target))
@@ -3032,8 +3063,10 @@ def main():
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     start_autopilot_thread()
     cfg = STATE.config
+    global BOUND_HOST
     host = "0.0.0.0" if (cfg.get("phone_access_enabled")
                          and cfg.get("phone_pin")) else "127.0.0.1"
+    BOUND_HOST = host
     if host == "0.0.0.0":
         print(f"Phone access ON — from your phone: http://{lan_ip()}:{args.port}/")
     print(f"Solo Studio dashboard: {url}")

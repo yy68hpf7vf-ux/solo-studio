@@ -141,6 +141,10 @@ for f in sys.argv[1:]: py_compile.compile(f, doraise=True)" \
     echo "$RES"
 }
 
+# Tells the app a restart will actually bring it back, so it can offer the
+# button instead of asking the user to quit and reopen.
+export SOLO_STUDIO_LAUNCHER=1
+
 # Run, and relaunch when the app asks for a restart (exit code 42 after an update).
 FIRST=1
 while true; do
