@@ -1,6 +1,7 @@
 """Dashboard tests: the phone PIN gate must actually gate."""
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -83,6 +84,24 @@ class PhoneGateTest(unittest.TestCase):
         with self.client.session_transaction() as s:
             s.clear()
         self.assertEqual(self.remote("get", "/live").status_code, 302)
+
+    # -- JARVIS ------------------------------------------------------------
+    # The exit link once existed but was hidden by `.back{display:none}` in
+    # the phone stylesheet, which left no way off the JARVIS screen on a
+    # phone. These pin that down.
+
+    def test_jarvis_has_a_way_back_to_the_dashboard(self):
+        r = self.client.get("/jarvis", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        self.assertEqual(r.status_code, 200)
+        html = r.data.decode()
+        self.assertRegex(html, r'<a class="back" href="/"')
+
+    def test_jarvis_exit_is_not_hidden_on_phones(self):
+        html = self.client.get(
+            "/jarvis", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        for block in re.findall(r"@media[^{]*max-width[^{]*\{(.*?)\n\}", html, re.S):
+            for rule in re.findall(r"\.back\b[^{}]*\{([^{}]*)\}", block):
+                self.assertNotIn("display:none", rule.replace(" ", ""))
 
 
 if __name__ == "__main__":

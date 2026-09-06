@@ -748,53 +748,86 @@ def _render(tpl, **ctx):
 
 
 JARVIS = """<!doctype html>
-<html lang="en"><head>
+<html lang="en">
+<head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>JARVIS — Solo Studio</title>
 PWAMETA_PLACEHOLDER
 <style>
 :root{--cy:#5ad7ff;--cy2:#9fe8ff;--dim:#3a6d8a;--amber:#ffb454;--grn:#4ade80;
-      --red:#ff6b6b;--ink:#dff3ff}
+      --red:#ff6b6b;--ink:#dff3ff;--accent:#5ad7ff}
 *{box-sizing:border-box;margin:0}
 html,body{height:100%}
 body{background:radial-gradient(1200px 800px at 50% 42%,#0a1f33 0%,#04101d 55%,#020810 100%);
   color:var(--ink);font:14px/1.45 "SF Mono",Menlo,Consolas,monospace;overflow:hidden}
-body::before{content:"";position:fixed;inset:0;pointer-events:none;
+body.alert{--accent:var(--amber)}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
   background-image:linear-gradient(rgba(90,215,255,.045) 1px,transparent 1px),
     linear-gradient(90deg,rgba(90,215,255,.045) 1px,transparent 1px);
   background-size:44px 44px}
-body::after{content:"";position:fixed;inset:0;pointer-events:none;
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.12) 0 2px,transparent 2px 4px)}
-.hud{display:grid;height:100vh;padding:20px 30px;gap:12px;
+/* a beam that sweeps down the whole display now and then */
+#beam{position:fixed;left:0;right:0;height:180px;z-index:3;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(90,215,255,.055),transparent);
+  animation:sweep 9s linear infinite}
+@keyframes sweep{0%{top:-180px}100%{top:100%}}
+/* corner brackets framing the display */
+.bracket{position:fixed;width:26px;height:26px;z-index:4;pointer-events:none;
+  border-color:var(--accent);opacity:.55;transition:border-color .4s}
+.bracket.tl{top:10px;left:10px;border-top:2px solid;border-left:2px solid}
+.bracket.tr{top:10px;right:10px;border-top:2px solid;border-right:2px solid}
+.bracket.bl{bottom:10px;left:10px;border-bottom:2px solid;border-left:2px solid}
+.bracket.br{bottom:10px;right:10px;border-bottom:2px solid;border-right:2px solid}
+
+.hud{position:relative;z-index:5;display:grid;height:100vh;padding:20px 30px;gap:12px;
   grid-template-rows:auto auto 1fr 196px;grid-template-columns:280px 1fr 300px;
   grid-template-areas:"top top top" "kpis kpis kpis" "left core right" "feed feed feed"}
+.label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+.glow{text-shadow:0 0 14px rgba(90,215,255,.75),0 0 34px rgba(90,215,255,.30)}
+
+/* ---- top bar ---- */
+.top{grid-area:top;display:flex;align-items:center;gap:16px;
+  border-bottom:1px solid rgba(90,215,255,.22);padding-bottom:12px}
+.top .sys{font-size:17px;letter-spacing:.34em;color:var(--cy2)}
+.top .greet{color:#8fc7e6;font-size:13px;letter-spacing:.06em;
+  white-space:nowrap;overflow:hidden}
+.top .greet::after{content:"▌";animation:blink 1s step-end infinite;color:var(--cy)}
+.top .greet.done::after{content:""}
+@keyframes blink{50%{opacity:0}}
+.top .clock{margin-left:auto;font-size:17px;color:var(--cy2);letter-spacing:.18em}
+.chip{font-size:10px;letter-spacing:.2em;padding:4px 12px;border:1px solid;border-radius:3px;
+  white-space:nowrap}
+.chip.on{color:var(--grn);border-color:rgba(74,222,128,.5);text-shadow:0 0 10px rgba(74,222,128,.7)}
+.chip.off{color:var(--amber);border-color:rgba(255,180,84,.5);text-shadow:0 0 10px rgba(255,180,84,.6)}
+/* the exit — always visible, big enough to tap */
+.back{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
+  color:var(--cy2);font-size:12px;letter-spacing:.16em;padding:9px 16px;
+  border:1px solid rgba(90,215,255,.45);border-radius:6px;background:rgba(90,215,255,.07);
+  transition:.15s;white-space:nowrap}
+.back:hover,.back:active{background:rgba(90,215,255,.2);border-color:var(--cy);
+  box-shadow:0 0 18px rgba(90,215,255,.35)}
+
+/* ---- kpi strip ---- */
 .kpis{grid-area:kpis;display:flex;flex-wrap:wrap;gap:6px 30px;
   border-bottom:1px solid rgba(90,215,255,.14);padding:2px 0 10px}
 .kpi .label{margin-bottom:1px}
 .kpi b{font-size:21px;color:#fff;font-weight:600}
 .kpi b.glow{text-shadow:0 0 10px rgba(90,215,255,.6)}
-.label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
-.glow{text-shadow:0 0 14px rgba(90,215,255,.75),0 0 34px rgba(90,215,255,.30)}
-/* top bar */
-.top{grid-area:top;display:flex;align-items:baseline;gap:22px;
-  border-bottom:1px solid rgba(90,215,255,.22);padding-bottom:12px}
-.top .sys{font-size:17px;letter-spacing:.34em;color:var(--cy2)}
-.top .greet{color:#8fc7e6;font-size:13px;letter-spacing:.06em}
-.top .clock{margin-left:auto;font-size:17px;color:var(--cy2);letter-spacing:.18em}
-.chip{font-size:10px;letter-spacing:.2em;padding:4px 12px;border:1px solid;border-radius:3px}
-.chip.on{color:var(--grn);border-color:rgba(74,222,128,.5);text-shadow:0 0 10px rgba(74,222,128,.7)}
-.chip.off{color:var(--amber);border-color:rgba(255,180,84,.5);text-shadow:0 0 10px rgba(255,180,84,.6)}
-/* left stats */
+
+/* ---- money column ---- */
 .left{grid-area:left;display:flex;flex-direction:column;justify-content:center;gap:22px}
 .stat .label{margin-bottom:4px}
 .stat b{display:block;font-size:37px;font-weight:600;color:#fff;line-height:1.05}
 .stat .sub{font-size:11px;color:var(--dim);letter-spacing:.08em}
-/* core */
+
+/* ---- reactor ---- */
 .core{grid-area:core;display:flex;flex-direction:column;align-items:center;
   justify-content:center;min-height:0}
 .reactor{width:min(40vh,380px);height:min(40vh,380px);
   filter:drop-shadow(0 0 26px rgba(90,215,255,.35))}
-.reactor circle,.reactor line{fill:none;stroke:var(--cy);vector-effect:non-scaling-stroke}
+.reactor circle,.reactor line,.reactor path{fill:none;stroke:var(--cy);
+  vector-effect:non-scaling-stroke}
 .rSeg{stroke-width:7;stroke-dasharray:52 26;opacity:.85;
   transform-origin:200px 200px;animation:spin 26s linear infinite}
 .rSeg2{stroke-width:2.4;stroke-dasharray:8 10;opacity:.7;
@@ -805,56 +838,87 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
 .spokes line{stroke-width:1.4;opacity:.5}
 .spokes{transform-origin:200px 200px;animation:spin 60s linear infinite reverse}
 .coreGlow{animation:pulse 2.6s ease-in-out infinite}
+#sweep{transform-origin:200px 200px;animation:spin 4s linear infinite}
+.ticks line{stroke-width:1;opacity:.35}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
+body.alert .reactor{filter:drop-shadow(0 0 30px rgba(255,180,84,.45))}
+body.alert .reactor circle,body.alert .reactor line{stroke:var(--amber)}
+body.alert .coreGlow{animation:pulse 1.1s ease-in-out infinite}
 .coreLabel{margin-top:16px;text-align:center}
 .coreLabel .label{margin-bottom:5px}
 .coreLabel b{font-size:15px;letter-spacing:.3em;color:var(--cy2)}
-/* right pipeline */
+body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,.6)}
+
+/* ---- pipeline bars ---- */
 .right{grid-area:right;display:flex;flex-direction:column;justify-content:center;gap:12px}
 .bar .label{display:flex;justify-content:space-between;margin-bottom:3px}
 .bar .label span:last-child{color:var(--cy2)}
 .track{height:7px;background:rgba(90,215,255,.10);border-radius:2px;overflow:hidden}
 .fill{height:100%;background:linear-gradient(90deg,rgba(90,215,255,.35),var(--cy));
   box-shadow:0 0 10px rgba(90,215,255,.6);width:0;transition:width .9s ease}
-/* feed */
+
+/* ---- mission log ---- */
 .feed{grid-area:feed;border-top:1px solid rgba(90,215,255,.22);padding-top:10px;
   overflow:hidden}
 .feed .label{margin-bottom:8px}
 #feedlines{overflow:hidden;font-size:12.5px}
 #feedlines div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   padding:1.5px 0;color:#a8d4ea}
+#feedlines div.fresh{animation:landed 1.6s ease-out}
+@keyframes landed{0%{background:rgba(90,215,255,.22);transform:translateX(-6px)}
+  100%{background:transparent;transform:none}}
 #feedlines .t{color:var(--dim)}
 #feedlines .k{color:var(--cy2)}
 #feedlines .k.pay{color:var(--grn)} #feedlines .k.err{color:var(--red)}
 #feedlines .k.warn{color:var(--amber)}
-.back{color:var(--dim);text-decoration:none;font-size:11px;letter-spacing:.2em}
-.back:hover{color:var(--cy2)}
+
+/* ---- boot sequence ---- */
+#boot{position:fixed;inset:0;z-index:20;background:#02080f;padding:9vh 8vw;
+  font-size:13px;color:var(--cy);letter-spacing:.06em}
+#boot div{opacity:0;animation:bootline .25s forwards}
+@keyframes bootline{to{opacity:1}}
+#boot .ok{color:var(--grn)}
+#boot.gone{opacity:0;pointer-events:none;transition:opacity .5s}
+
 @media (max-width:900px){
   body{overflow:auto}
   .hud{display:flex;flex-direction:column;height:auto;gap:18px;padding:16px 18px 30px}
-  .top{flex-wrap:wrap;row-gap:8px}
+  .top{flex-wrap:wrap;row-gap:10px}
   .top .sys{font-size:15px;letter-spacing:.26em}
   .top .clock{margin-left:auto;font-size:15px}
-  .top .greet{order:9;flex-basis:100%}
-  .back{display:none}
-  .kpis{gap:8px 24px;padding-bottom:12px}
+  .top .greet{order:9;flex-basis:100%;white-space:normal}
+  .back{order:-1}                     /* the exit comes first on a phone */
+  .bracket{display:none}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 10px;padding-bottom:14px}
+  /* two lines reserved for every label, so wrapped ones don't shove
+     their number out of line with the rest of the row */
+  .kpi{min-width:0;display:flex;flex-direction:column;justify-content:flex-end}
+  .kpi .label{font-size:9px;letter-spacing:.13em;overflow-wrap:anywhere;
+    min-height:2.4em;display:flex;align-items:flex-end}
   .kpi b{font-size:19px}
-  .left{flex-direction:row;flex-wrap:wrap;gap:18px 34px;justify-content:flex-start}
+  .left{display:grid;grid-template-columns:1fr 1fr;gap:18px 20px}
   .stat b{font-size:31px}
   .reactor{width:230px;height:230px}
   .right{gap:10px}
   .feed{padding-bottom:10px}
   #feedlines div{white-space:normal}
 }
+@media (prefers-reduced-motion:reduce){
+  #beam,.rSeg,.rSeg2,.rSeg3,.spokes,#sweep,.coreGlow{animation:none}
+}
 </style></head><body>
+<div id="boot"></div>
+<div id="beam"></div>
+<div class="bracket tl"></div><div class="bracket tr"></div>
+<div class="bracket bl"></div><div class="bracket br"></div>
 <div class="hud">
   <div class="top">
     <span class="sys glow">J.A.R.V.I.S</span>
-    <span class="greet" id="greet"></span>
+    <a class="back" href="/">◀ EXIT TO DASHBOARD</a>
     <span class="chip" id="autopilot">…</span>
     <span class="clock glow" id="clock">--:--:--</span>
-    <a class="back" href="/">◀ CLASSIC</a>
+    <span class="greet" id="greet"></span>
   </div>
   <div class="kpis" id="kpis"></div>
   <div class="left" id="money"></div>
@@ -867,10 +931,17 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
           <stop offset="70%" stop-color="#2ea8dd" stop-opacity=".55"/>
           <stop offset="100%" stop-color="#0a4a6e" stop-opacity="0"/>
         </radialGradient>
+        <linearGradient id="sw" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#5ad7ff" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#5ad7ff" stop-opacity=".55"/>
+        </linearGradient>
       </defs>
       <circle class="rSeg"  cx="200" cy="200" r="186"/>
       <circle class="rThin" cx="200" cy="200" r="168"/>
+      <g class="ticks" id="ticks"></g>
       <circle class="rSeg2" cx="200" cy="200" r="150"/>
+      <g id="sweep"><path d="M200 200 L200 54 A146 146 0 0 1 303 97 Z"
+        fill="url(#sw)" stroke="none"/></g>
       <g class="spokes" id="spokes"></g>
       <circle class="rThin" cx="200" cy="200" r="104"/>
       <circle class="rSeg3" cx="200" cy="200" r="82"/>
@@ -889,6 +960,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
 </div>
 <script>
 (function(){
+  /* ---- reactor furniture ---- */
   var spokes = document.getElementById('spokes');
   for (var i = 0; i < 12; i++) {
     var a = i * Math.PI / 6;
@@ -897,6 +969,17 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
     l.setAttribute('x2', 200 + 146 * Math.cos(a)); l.setAttribute('y2', 200 + 146 * Math.sin(a));
     spokes.appendChild(l);
   }
+  var ticks = document.getElementById('ticks');
+  for (var t = 0; t < 60; t++) {
+    var ta = t * Math.PI / 30, len = (t % 5 === 0) ? 12 : 6;
+    var tl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    tl.setAttribute('x1', 200 + 168 * Math.cos(ta)); tl.setAttribute('y1', 200 + 168 * Math.sin(ta));
+    tl.setAttribute('x2', 200 + (168 - len) * Math.cos(ta));
+    tl.setAttribute('y2', 200 + (168 - len) * Math.sin(ta));
+    ticks.appendChild(tl);
+  }
+
+  /* ---- clock ---- */
   function pad(n){ return (n < 10 ? '0' : '') + n; }
   function tickClock(){
     var d = new Date();
@@ -905,38 +988,106 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
   }
   setInterval(tickClock, 1000); tickClock();
 
+  /* ---- boot sequence, once ---- */
+  var BOOT = ['SOLO STUDIO CORE v2 … ONLINE',
+              'LEAD SCOUT … STANDING BY',
+              'RESEARCHER … STANDING BY',
+              'TRIAGE + DESIGNER … STANDING BY',
+              'PAYMENT GATE … ARMED',
+              'ALL SYSTEMS LINKED'];
+  var boot = document.getElementById('boot');
+  BOOT.forEach(function (line, i) {
+    var el = document.createElement('div');
+    el.style.animationDelay = (i * 0.13) + 's';
+    el.innerHTML = '&gt; ' + line.replace(/(ONLINE|STANDING BY|ARMED|LINKED)/,
+                                          '<span class="ok">$1</span>');
+    boot.appendChild(el);
+  });
+  setTimeout(function(){ boot.classList.add('gone'); }, 1250);
+  setTimeout(function(){ boot.remove(); }, 1800);
+
+  /* ---- typed greeting ---- */
+  function typeOut(el, text){
+    if (el.dataset.typed === text) return;
+    el.dataset.typed = text; el.textContent = ''; el.classList.remove('done');
+    var i = 0;
+    (function step(){
+      el.textContent = text.slice(0, ++i);
+      if (i < text.length) setTimeout(step, 16); else el.classList.add('done');
+    })();
+  }
+
+  /* ---- numbers that count up to their new value ---- */
+  var shown = {};
+  function setNumber(el, key, value){
+    var target = parseFloat(String(value).replace(/[^0-9.\\-]/g, ''));
+    if (isNaN(target)) { el.textContent = value; return; }
+    var prefix = /^\\$/.test(String(value)) ? '$' : '';
+    var suffix = /%$/.test(String(value)) ? '%' : '';
+    var from = shown[key] === undefined ? target : shown[key];
+    shown[key] = target;
+    if (from === target) { el.textContent = value; return; }
+    var start = performance.now(), dur = 650;
+    (function frame(now){
+      var p = Math.min(1, (now - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      var v = Math.round(from + (target - from) * eased);
+      el.textContent = prefix + v.toLocaleString() + suffix;
+      if (p < 1) requestAnimationFrame(frame); else el.textContent = value;
+    })(start);
+  }
+
   var STAGE_LABELS = {found:'FOUND', contacted:'CONTACTED', building_preview:'BUILDING',
     preview_sent:'PREVIEW SENT', sending_payment_link:'SENDING LINK',
     payment_link_sent:'AWAITING PAYMENT', paid:'PAID', deploying_final:'DEPLOYING',
     delivered:'DELIVERED', not_interested:'PASSED', error:'ATTENTION'};
+  var lastTopEvent = null;
 
   function render(d){
     var greetWord = 'Good evening'; var h = new Date().getHours();
     if (h >= 5 && h < 12) greetWord = 'Good morning';
     else if (h >= 12 && h < 18) greetWord = 'Good afternoon';
-    document.getElementById('greet').textContent =
-      greetWord + (d.owner ? ', ' + d.owner : '') + '. All services standing by.';
+    typeOut(document.getElementById('greet'),
+            greetWord + (d.owner ? ', ' + d.owner : '') + '. All services standing by.');
+
     var ap = document.getElementById('autopilot');
     ap.textContent = d.autopilot ? 'AUTOPILOT · ONLINE' : 'AUTOPILOT · STANDBY';
     ap.className = 'chip ' + (d.autopilot ? 'on' : 'off');
-    var money = document.getElementById('money'); money.textContent = '';
-    d.money.forEach(function(m){
-      var w = document.createElement('div'); w.className = 'stat';
-      var lab = document.createElement('div'); lab.className = 'label'; lab.textContent = m.l;
-      var b = document.createElement('b'); b.className = 'glow'; b.textContent = m.v;
-      var sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = m.s || '';
-      w.appendChild(lab); w.appendChild(b); w.appendChild(sub); money.appendChild(w);
+
+    document.body.classList.toggle('alert', d.attention > 0);
+
+    var money = document.getElementById('money');
+    if (money.children.length !== d.money.length) money.textContent = '';
+    d.money.forEach(function (m, i) {
+      var w = money.children[i];
+      if (!w) {
+        w = document.createElement('div'); w.className = 'stat';
+        w.innerHTML = '<div class="label"></div><b class="glow"></b><div class="sub"></div>';
+        money.appendChild(w);
+      }
+      w.children[0].textContent = m.l;
+      setNumber(w.children[1], 'money' + i, m.v);
+      w.children[2].textContent = m.s || '';
     });
-    var kpis = document.getElementById('kpis'); kpis.textContent = '';
-    d.kpis.forEach(function(m){
-      var w = document.createElement('div'); w.className = 'kpi';
-      var lab = document.createElement('div'); lab.className = 'label'; lab.textContent = m.l;
-      var b = document.createElement('b'); if (m.hot) b.className = 'glow'; b.textContent = m.v;
-      w.appendChild(lab); w.appendChild(b); kpis.appendChild(w);
+
+    var kpis = document.getElementById('kpis');
+    if (kpis.children.length !== d.kpis.length) kpis.textContent = '';
+    d.kpis.forEach(function (m, i) {
+      var w = kpis.children[i];
+      if (!w) {
+        w = document.createElement('div'); w.className = 'kpi';
+        w.innerHTML = '<div class="label"></div><b></b>';
+        kpis.appendChild(w);
+      }
+      w.children[0].textContent = m.l;
+      w.children[1].className = m.hot ? 'glow' : '';
+      setNumber(w.children[1], 'kpi' + i, m.v);
     });
+
     document.getElementById('coreState').textContent =
-      d.attention > 0 ? d.attention + ' ITEM' + (d.attention === 1 ? '' : 'S') + ' NEED YOU'
+      d.attention > 0 ? d.attention + (d.attention === 1 ? ' ITEM NEEDS' : ' ITEMS NEED') + ' YOU'
                       : 'SYSTEMS NOMINAL';
+
     var bars = document.getElementById('bars'); bars.textContent = '';
     var max = 1, k;
     for (k in d.stages) if (d.stages[k] > max) max = d.stages[k];
@@ -950,17 +1101,21 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
       var fill = document.createElement('div'); fill.className = 'fill';
       track.appendChild(fill); wrap.appendChild(lab); wrap.appendChild(track);
       bars.appendChild(wrap);
-      (function(f, w){ requestAnimationFrame(function(){ f.style.width = w + '%'; }); })
+      (function(f, w2){ requestAnimationFrame(function(){ f.style.width = w2 + '%'; }); })
         (fill, Math.round(100 * d.stages[k] / max));
     }
+
     var feed = document.getElementById('feedlines'); feed.textContent = '';
     if (!d.events.length) {
       var e0 = document.createElement('div');
-      e0.textContent = '[--:--:--] awaiting first mission — find leads from the classic view';
+      e0.textContent = '[--:--:--] awaiting first mission — find leads from the dashboard';
       feed.appendChild(e0);
     }
-    d.events.forEach(function(ev){
+    var newestKey = d.events.length ? d.events[0].time + d.events[0].detail : null;
+    var isNew = newestKey && lastTopEvent !== null && newestKey !== lastTopEvent;
+    d.events.forEach(function(ev, idx){
       var line = document.createElement('div');
+      if (isNew && idx === 0) line.className = 'fresh';
       var t = document.createElement('span'); t.className = 't';
       t.textContent = '[' + ev.time + '] ';
       var kEl = document.createElement('span');
@@ -972,7 +1127,9 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
       line.appendChild(t); line.appendChild(kEl); line.appendChild(dEl);
       feed.appendChild(line);
     });
+    lastTopEvent = newestKey;
   }
+
   function refresh(){
     fetch('/jarvis/data').then(function(r){ return r.json(); }).then(render)
       .catch(function(){ document.getElementById('coreState').textContent = 'LINK LOST — RETRYING'; });
