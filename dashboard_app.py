@@ -264,72 +264,163 @@ BASE = """
 <title>Solo Studio</title>
 {{ pwa_meta|safe }}
 <style>
-:root { --bg:#f5f7fa; --card:#fff; --ink:#17222e; --mut:#68788a; --line:#e3e9ef;
-        --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; }
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);
-  font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-header{background:#101826;color:#fff;padding:14px 24px;display:flex;gap:24px;
-  align-items:center}
-header .brand{font-weight:700;font-size:17px} header a{color:#cbd5e1;
-  text-decoration:none;font-weight:500} header a:hover{color:#fff}
-main{max-width:1100px;margin:24px auto;padding:0 16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:18px 20px;margin-bottom:18px}
-h1{font-size:20px;margin:0 0 12px} h2{font-size:16px;margin:0 0 10px}
+/* Dark glass, after the Mac desktop: near-black ground, a soft cold glow
+   behind it, and translucent rounded panels floating on top. */
+:root{
+  --bg:#08090c; --bg2:#0d1015;
+  --panel:rgba(255,255,255,.045);      /* the glass itself */
+  --panel-2:rgba(255,255,255,.028);    /* one step quieter */
+  --card:var(--panel);
+  --ink:#eceff4; --mut:#8d99a9;
+  --line:rgba(255,255,255,.085);
+  --line-2:rgba(255,255,255,.05);
+  --acc:#8aa9ff;                       /* the periwinkle from the widgets */
+  --acc-ink:#0a0d14;
+  --ok:#5bd98a; --warn:#f5b544; --bad:#ff7b72;
+  --r-lg:18px; --r-md:12px; --r-sm:9px;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;min-height:100vh;color:var(--ink);background:var(--bg);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(58vw 42vw at 78% -6%, rgba(138,169,255,.11), transparent 62%),
+    radial-gradient(48vw 40vw at 2% 4%, rgba(255,255,255,.055), transparent 60%),
+    linear-gradient(180deg,var(--bg2),var(--bg) 52%)}
+
+/* ---- chrome ---- */
+header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
+  padding:13px 22px;color:var(--ink);
+  background:rgba(10,12,16,.72);backdrop-filter:saturate(160%) blur(18px);
+  -webkit-backdrop-filter:saturate(160%) blur(18px);
+  border-bottom:1px solid var(--line-2)}
+header .brand{font-weight:650;font-size:16px;letter-spacing:-.01em}
+header a{color:#9aa6b6;text-decoration:none;font-weight:500;font-size:14px;
+  padding:5px 2px;transition:color .15s}
+header a:hover{color:var(--ink)}
+main{max-width:1120px;margin:26px auto 60px;padding:0 18px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:20px 22px;margin-bottom:16px;
+  backdrop-filter:blur(22px) saturate(150%);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  box-shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 10px 34px rgba(0,0,0,.34)}
+h1{font-size:20px;margin:0 0 14px;font-weight:620;letter-spacing:-.015em}
+h2{font-size:15px;margin:0 0 10px;font-weight:600;letter-spacing:-.01em}
+
+/* ---- tables ---- */
 table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);
+th,td{text-align:left;padding:10px 11px;border-bottom:1px solid var(--line-2);
   vertical-align:top}
-th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;
-  letter-spacing:.04em}
-.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;
-  font-weight:600;white-space:nowrap}
-.b-found{background:#eef2ff;color:#4338ca} .b-contacted{background:#e0f2fe;color:#0369a1}
-.b-preview_sent{background:#fef9c3;color:#854d0e}
-.b-payment_link_sent{background:#ffedd5;color:#c2410c}
-.b-paid,.b-delivered{background:#dcfce7;color:#15803d}
-.b-not_interested{background:#f1f5f9;color:#64748b}
-.b-error{background:#fee2e2;color:#b91c1c}
-.b-building_preview,.b-sending_payment_link,.b-deploying_final{background:#ede9fe;color:#6d28d9}
-.btn{display:inline-block;border:1px solid var(--line);background:#fff;color:var(--ink);
-  border-radius:7px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;
-  text-decoration:none}
-.btn:hover{border-color:var(--acc);color:var(--acc)}
-.btn-primary{background:var(--acc);border-color:var(--acc);color:#fff}
-.btn-primary:hover{opacity:.9;color:#fff}
-.btn-danger{color:var(--bad)} .btn-sm{padding:3px 9px;font-size:12px}
-form.inline{display:inline} input[type=text],input[type=password],input[type=number],
-textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);
-  border-radius:7px;font:inherit;background:#fff}
-textarea{min-height:120px}
-label{display:block;font-weight:600;font-size:13px;margin:12px 0 4px}
-.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:500}
-.flash.ok{background:#dcfce7;color:#166534} .flash.err{background:#fee2e2;color:#991b1b}
+tr:last-child td{border-bottom:0}
+th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;
+  letter-spacing:.07em}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:rgba(255,255,255,.022)}
+
+/* ---- stage badges: lit glass, not pastel stickers ---- */
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;
+  font-weight:600;white-space:nowrap;border:1px solid transparent}
+.b-found{background:rgba(138,169,255,.14);color:#a9c0ff;border-color:rgba(138,169,255,.24)}
+.b-contacted{background:rgba(56,189,248,.13);color:#7dd3fc;border-color:rgba(56,189,248,.24)}
+.b-preview_sent{background:rgba(250,204,21,.13);color:#fbe08a;border-color:rgba(250,204,21,.24)}
+.b-payment_link_sent{background:rgba(251,146,60,.14);color:#fdba74;border-color:rgba(251,146,60,.26)}
+.b-paid,.b-delivered{background:rgba(74,222,128,.14);color:#86efac;border-color:rgba(74,222,128,.26)}
+.b-not_interested{background:rgba(255,255,255,.06);color:#94a3b8;border-color:var(--line)}
+.b-error{background:rgba(248,113,113,.14);color:#fca5a5;border-color:rgba(248,113,113,.28)}
+.b-building_preview,.b-sending_payment_link,.b-deploying_final{
+  background:rgba(167,139,250,.14);color:#c4b5fd;border-color:rgba(167,139,250,.26)}
+
+/* ---- controls ---- */
+.btn{display:inline-block;border:1px solid var(--line);background:var(--panel);
+  color:var(--ink);border-radius:var(--r-sm);padding:7px 13px;font-size:13px;
+  font-weight:600;cursor:pointer;text-decoration:none;transition:.15s;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.btn:hover{border-color:rgba(138,169,255,.5);color:#fff;
+  background:rgba(138,169,255,.12)}
+.btn-primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.btn-primary:hover{background:#9fb8ff;border-color:#9fb8ff;color:var(--acc-ink)}
+.btn-danger{color:var(--bad)}
+.btn-danger:hover{border-color:rgba(255,123,114,.5);background:rgba(255,123,114,.12);
+  color:#ffa39d}
+.btn-sm{padding:4px 10px;font-size:12px}
+form.inline{display:inline}
+input[type=text],input[type=password],input[type=number],textarea,select{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);
+  font:inherit;background:rgba(0,0,0,.28);color:var(--ink);transition:.15s}
+input:focus,textarea:focus,select:focus{outline:0;border-color:rgba(138,169,255,.55);
+  background:rgba(0,0,0,.38);box-shadow:0 0 0 3px rgba(138,169,255,.13)}
+input::placeholder,textarea::placeholder{color:#5f6b7a}
+textarea{min-height:120px;line-height:1.6}
+label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
+input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:auto;
+  transform:scale(1.1);vertical-align:-1px}
+details summary::marker{color:var(--mut)}
+
+/* ---- notices ---- */
+.flash{padding:11px 15px;border-radius:var(--r-md);margin-bottom:14px;
+  font-weight:500;border:1px solid transparent}
+.flash.ok{background:rgba(91,217,138,.11);color:#9ff0bd;border-color:rgba(91,217,138,.26)}
+.flash.err{background:rgba(255,123,114,.11);color:#ffb4ae;border-color:rgba(255,123,114,.28)}
 .muted{color:var(--mut);font-size:13px}
-.warnbar{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:10px;
-  padding:12px 16px;margin-bottom:18px;display:flex;justify-content:space-between;
-  align-items:center;gap:12px}
-.attention{border-left:4px solid var(--warn)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
-.statrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:10px 16px;text-align:center;min-width:96px}
-.stat b{display:block;font-size:20px}
-.stat span{font-size:12px;color:var(--mut)}
-code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
+.warnbar{background:rgba(245,181,68,.09);border:1px solid rgba(245,181,68,.26);
+  color:#f3cf92;border-radius:var(--r-lg);padding:13px 17px;margin-bottom:16px;
+  display:flex;justify-content:space-between;align-items:center;gap:12px}
+.attention{border-left:3px solid var(--warn)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
+
+/* ---- stat tiles ---- */
+.statrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.stat{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:12px 17px;text-align:center;min-width:98px;
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.stat b{display:block;font-size:21px;font-weight:640;letter-spacing:-.02em}
+.stat span{font-size:11.5px;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.05em}
+
+/* callout boxes + the cold-email preview, shared by several pages */
+.note{border-radius:var(--r-md);padding:14px 16px;border:1px solid var(--line)}
+.note.info{background:rgba(138,169,255,.10);border-color:rgba(138,169,255,.26)}
+.note.warn{background:rgba(245,181,68,.10);border-color:rgba(245,181,68,.26)}
+.note .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--acc);font-weight:600}
+.emailbox{border:1px solid var(--line);border-radius:var(--r-md);padding:13px 15px;
+  background:rgba(0,0,0,.24);margin:10px 0}
+.emailbox .subj{font-weight:600;margin-bottom:7px}
+.emailbox .body{white-space:pre-wrap;font-size:13.5px;color:#aab6c4;line-height:1.6}
+
+code{background:rgba(255,255,255,.07);padding:2px 6px;border-radius:5px;
+  font-size:13px;color:#cbd5e1;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+a{color:var(--acc);text-decoration-color:rgba(138,169,255,.4);
+  text-underline-offset:2px}
+a:hover{text-decoration-color:currentColor}
+td a{color:var(--ink);text-decoration:none;font-weight:600}
+td a:hover{color:var(--acc)}
 .tablewrap{overflow-x:auto}
-#live-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;
-  background:#101826;color:#fff;padding:10px 18px;border-radius:999px;
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2)}
+::-webkit-scrollbar-track{background:transparent}
+
+#live-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;
+  background:rgba(20,24,31,.9);color:var(--ink);padding:11px 20px;
+  border:1px solid var(--line);border-radius:999px;
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   font-size:14px;font-weight:600;cursor:pointer;z-index:50;
-  box-shadow:0 4px 16px rgba(0,0,0,.28)}
+  box-shadow:0 8px 30px rgba(0,0,0,.5)}
+
 @media (max-width:800px){
   .grid{grid-template-columns:1fr}
   header{padding:10px 14px;gap:14px;flex-wrap:wrap;font-size:14px}
   header .brand{font-size:16px;width:auto}
-  main{margin:14px auto;padding:0 12px}
-  .card{padding:14px 15px}
+  main{margin:16px auto 50px;padding:0 12px}
+  .card{padding:16px 16px;border-radius:15px}
   /* Stack the "needs an email" rows instead of squeezing them into columns */
   table.stack thead{display:none}
-  table.stack tr{display:block;padding:10px 0;border-bottom:1px solid var(--line)}
+  table.stack tr{display:block;padding:10px 0;border-bottom:1px solid var(--line-2)}
   table.stack td{display:block;border:0;padding:2px 0}
   .btn{padding:9px 14px}
   input[type=text],input[type=password],input[type=number]{font-size:16px}
@@ -340,18 +431,19 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
   <span class="brand">Solo Studio</span>
   <a href="{{ url_for('dashboard') }}">Dashboard</a>
   <a href="{{ url_for('approve_queue') }}">Approve{% if pending_count %}
-    <span style="background:#f59e0b;color:#111;border-radius:999px;padding:1px 7px;
-    font-size:12px;margin-left:3px">{{ pending_count }}</span>{% endif %}</a>
+    <span style="background:var(--warn);color:#1a1206;border-radius:999px;
+    padding:1px 7px;font-size:12px;font-weight:700;margin-left:3px"
+    >{{ pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('team_page') }}">Team</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('ask_page') }}">Ask</a>
   <a href="{{ url_for('setup') }}">Setup</a>
   <a href="{{ url_for('updates_page') }}">Updates{% if update_ready %}
-    <span style="color:#4ade80">●</span>{% endif %}</a>
+    <span style="color:var(--ok)">●</span>{% endif %}</a>
   <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#7dd3fc">◉ JARVIS</a>
   {% if cloud_mode %}<form class="inline" method="post" action="{{ url_for('logout') }}">
-  <button class="btn btn-sm" style="background:transparent;color:#cbd5e1;border-color:#334155">
-  Sign out</button></form>{% endif %}
+  <button class="btn btn-sm" style="background:transparent">Sign out</button>
+  </form>{% endif %}
 </header>
 <main>
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -464,7 +556,7 @@ phone call) before outreach can go out. Found businesses queue up on the
 <thead><tr><th>Business</th><th>Stage</th><th>Email</th><th>Links</th><th>Actions</th></tr></thead>
 <tbody>
 {% for l in leads %}
-<tr {% if l['error'] %}style="background:#fff7f7"{% endif %}>
+<tr {% if l['error'] %}style="background:rgba(255,123,114,.07)"{% endif %}>
   <td><a href="{{ url_for('lead_page', lead_id=l['id']) }}"><b>{{ l['name'] }}</b></a>
       <div class="muted">{{ l['category'] or '' }}{% if l['address'] %} · {{ l['address'] }}{% endif %}</div>
       {% if l['error'] %}<div class="muted" style="color:var(--bad)">⚠ {{ l['error'][:120] }}</div>{% endif %}</td>
@@ -583,26 +675,28 @@ SETUP = """
 {% extends "base" %}{% block body %}
 <style>
 .keyhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.keyhead .n{background:#101826;color:#fff;border-radius:999px;width:22px;height:22px;
+.keyhead .n{background:rgba(255,255,255,.11);color:var(--ink);border-radius:999px;
+  width:22px;height:22px;
   display:inline-flex;align-items:center;justify-content:center;font-size:12px;
   font-weight:700;flex:0 0 auto;align-self:center}
 .keyhead h3{margin:0;font-size:15px}
 .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
   text-transform:uppercase;letter-spacing:.03em}
-.pill.have{background:#dcfce7;color:#15803d}
-.pill.need{background:#fef3c7;color:#92400e}
-.keycard{border:1px solid var(--line);border-radius:9px;padding:14px 16px;
-  margin-bottom:12px;background:#fff}
-.keycard.done{background:#fafdfb;border-color:#c9ead5}
-.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#3d4b5a}
+.pill.have{background:rgba(91,217,138,.16);color:#8ce8ac}
+.pill.need{background:rgba(245,181,68,.16);color:#f3cf92}
+.keycard{border:1px solid var(--line);border-radius:var(--r-md);padding:15px 17px;
+  margin-bottom:11px;background:var(--panel-2)}
+.keycard.done{background:rgba(91,217,138,.055);border-color:rgba(91,217,138,.24)}
+.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#b3bfcd}
 .keycard ol li{margin-bottom:5px}
 .keycard .note{font-size:12.5px;color:var(--mut);margin-top:9px;
   border-left:3px solid var(--line);padding-left:9px}
-.progress{background:#101826;color:#fff;border-radius:9px;padding:12px 16px;
-  margin-bottom:16px;font-weight:600}
+.progress{background:linear-gradient(135deg,rgba(138,169,255,.18),rgba(138,169,255,.06));
+  border:1px solid rgba(138,169,255,.26);color:var(--ink);border-radius:var(--r-md);
+  padding:13px 17px;margin-bottom:16px;font-weight:600}
 .progress .sub{font-weight:400;opacity:.75;font-size:13px;margin-top:3px}
-details.adv{border:1px solid var(--line);border-radius:9px;padding:0 14px;
-  margin-top:16px;background:#fbfcfd}
+details.adv{border:1px solid var(--line);border-radius:var(--r-md);padding:0 15px;
+  margin-top:16px;background:var(--panel-2)}
 details.adv[open]{padding-bottom:12px}
 details.adv summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:14px}
 </style>
@@ -783,17 +877,23 @@ ASK = """
   max-height:62vh;overflow-y:auto;padding:4px 2px 8px}
 .msg{max-width:min(720px,86%);padding:10px 14px;border-radius:13px;
   white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
-.msg.you{align-self:flex-end;background:var(--acc);color:#fff;
-  border-bottom-right-radius:4px}
-.msg.bot{align-self:flex-start;background:#f1f5f9;border-bottom-left-radius:4px}
-.msg.bad{align-self:flex-start;background:#fee2e2;color:#991b1b}
-.msg.think{align-self:flex-start;background:#f1f5f9;color:var(--mut)}
-.askbar{display:flex;gap:8px;margin-top:12px}
+.msg.you{align-self:flex-end;background:var(--acc);color:var(--acc-ink);
+  font-weight:500;border-bottom-right-radius:5px}
+.msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
+  border-bottom-left-radius:5px}
+.msg.bad{align-self:flex-start;background:rgba(255,123,114,.12);color:#ffb4ae;
+  border:1px solid rgba(255,123,114,.28)}
+.msg.think{align-self:flex-start;background:var(--panel);color:var(--mut);
+  border:1px solid var(--line)}
+.askbar{display:flex;gap:8px;margin-top:12px;align-items:flex-end}
+.askbar button{flex:0 0 auto;padding:11px 20px}
 .askbar textarea{min-height:46px;max-height:150px;resize:vertical;flex:1}
 .starters{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-.starters button{font:inherit;font-size:13px;background:#fff;cursor:pointer;
-  border:1px solid var(--line);border-radius:999px;padding:6px 13px;color:var(--ink)}
-.starters button:hover{border-color:var(--acc);color:var(--acc)}
+.starters button{font:inherit;font-size:13px;background:var(--panel);cursor:pointer;
+  border:1px solid var(--line);border-radius:999px;padding:7px 14px;color:var(--ink);
+  transition:.15s}
+.starters button:hover{border-color:rgba(138,169,255,.5);color:#fff;
+  background:rgba(138,169,255,.13)}
 @media (max-width:800px){.chat{max-height:none}.msg{max-width:92%}}
 </style>
 <div class="card">
@@ -1794,10 +1894,9 @@ by themselves.</p></div>
     · {{ item.lead['phone'] }}{% endif %}</div>
   <div class="muted" style="margin:6px 0"><b>To:</b> {{ item.lead['email'] }}</div>
   {% if item.rendered.ok %}
-  <div style="border:1px solid var(--line);border-radius:8px;padding:12px;
-    background:#fbfcfe;margin:10px 0">
-    <div style="font-weight:600;margin-bottom:6px">{{ item.rendered.subject }}</div>
-    <div style="white-space:pre-wrap;font-size:13.5px;color:#33414f">{{ item.rendered.body }}</div>
+  <div class="emailbox">
+    <div class="subj">{{ item.rendered.subject }}</div>
+    <div class="body">{{ item.rendered.body }}</div>
   </div>
   {% else %}<p style="color:var(--bad)">{{ item.rendered.error }}</p>{% endif %}
   <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -1826,10 +1925,8 @@ a quick call) and paste it in.</p>
       {% if l['phone'] %}· {{ l['phone'] }}{% endif %}</div></td>
   <td style="min-width:210px">
     {% if l['suggested_email'] %}
-    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
-      padding:9px 11px;margin-bottom:8px">
-      <div class="muted" style="font-size:11px;text-transform:uppercase;
-        letter-spacing:.05em;color:#1d4ed8">Researcher found</div>
+    <div class="note info" style="padding:9px 11px;margin-bottom:8px">
+      <div class="k">Researcher found</div>
       <div style="font-weight:600;word-break:break-all">{{ l['suggested_email'] }}</div>
       {% if l['suggested_email_note'] %}<div class="muted">{{ l['suggested_email_note'] }}</div>{% endif %}
       {% if l['suggested_email_source'] %}<div class="muted">
@@ -1965,10 +2062,10 @@ def _team_roster():
 
     def state(ready: bool, on: bool = True, missing: str = ""):
         if not ready:
-            return "NEEDS KEY", "#fee2e2", "#b91c1c", missing
+            return "NEEDS KEY", "rgba(255,123,114,.15)", "#fca5a5", missing
         if not on:
-            return "STANDBY", "#f1f5f9", "#64748b", ""
-        return "ON DUTY", "#dcfce7", "#15803d", ""
+            return "STANDBY", "rgba(255,255,255,.07)", "#94a3b8", ""
+        return "ON DUTY", "rgba(91,217,138,.15)", "#8ce8ac", ""
 
     auto = bool(cfg.get("autopilot_enabled"))
     members = [
@@ -2107,8 +2204,7 @@ appear.</p>
     <form method="post" action="{{ url_for('check_update') }}">
       <button class="btn">Try again</button></form>
   {% elif info.available %}
-    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;
-      padding:14px 16px;margin-bottom:14px">
+    <div class="note info" style="margin-bottom:14px">
       <div style="font-weight:600;font-size:16px">An update is ready</div>
       <div class="muted" style="margin-top:4px">{{ info.message }}</div>
       <div class="muted">Released {{ info.date }} · version {{ info.short }}</div>
@@ -2124,8 +2220,7 @@ appear.</p>
       <button class="btn">Check again</button></form>
   {% endif %}
   {% if restart_needed %}
-    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;
-      padding:14px 16px;margin-top:14px">
+    <div class="note warn" style="margin-top:14px">
       <div style="font-weight:600">Update installed — restart to use it</div>
       <form method="post" action="{{ url_for('do_restart') }}" style="margin-top:8px">
         <button class="btn btn-primary">Restart Solo Studio</button></form>

@@ -95,6 +95,30 @@ class PhoneGateTest(unittest.TestCase):
             self.remote("post", "/ask/send", json={"message": "hi"}).status_code, 302)
         self.assertEqual(self.remote("post", "/ask/clear").status_code, 302)
 
+    # -- theme --------------------------------------------------------------
+
+    def test_shell_is_dark(self):
+        """Every page shares one dark shell — no pale panels sneaking back in."""
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        self.assertIn("color-scheme:dark", html.replace(" ", ""))
+        self.assertIn("--bg:#08090c", html.replace(" ", ""))
+
+    def test_no_page_paints_a_light_panel(self):
+        """A near-white background on any page would break the dark theme."""
+        import re
+        pale = re.compile(r"background(?:-color)?:\s*(#(?:fff|ffffff|f[0-9a-f]{5}|"
+                          r"e[0-9a-f]{5})\b)", re.I)
+        for path in ("/", "/approve", "/team", "/activity", "/ask",
+                     "/setup", "/updates"):
+            html = self.client.get(
+                path, environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+            # the QR code must stay light — scanners need the contrast
+            html = re.sub(r"<svg\b.*?</svg>", "", html, flags=re.S)
+            with self.subTest(page=path):
+                self.assertIsNone(pale.search(html),
+                                  f"{path} paints {pale.search(html)}")
+
     # -- JARVIS ------------------------------------------------------------
     # The exit link once existed but was hidden by `.back{display:none}` in
     # the phone stylesheet, which left no way off the JARVIS screen on a

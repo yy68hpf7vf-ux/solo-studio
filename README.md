@@ -2,6 +2,9 @@
 
 An automated lead-gen + sales pipeline for a one-person web design studio.
 
+Dark by design — deep black, soft glass panels and rounded corners, to sit
+comfortably next to the rest of your Mac.
+
 **What it does, end to end:**
 
 1. **Finds local businesses with no website** (Google Places API).
