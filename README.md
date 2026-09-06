@@ -56,14 +56,35 @@ To keep it in your Dock: while the app is running, right-click its Dock icon
 
 ## First-time setup
 
-1. In the dashboard, open **Setup** and paste in your API keys:
-   Google Places, Inkbox, Anthropic (Claude), Netlify, and Stripe.
-2. Fill in your name, studio name, **mailing address**, and price.
-3. Click **Save settings**, then **Test connections** — every row should show
-   a green check before you start.
-4. Start with a **Stripe TEST key** (`sk_test_…`) and send the pipeline
-   through a lead pointing at your own email address. Switch to your live key
-   (`sk_live_…`) only when the whole flow has worked for you once.
+Open **Setup** in the dashboard. It walks you through the five keys one card at
+a time — each says what it's for, how long it takes, the exact clicks, and has a
+button that opens the right page. A banner at the top counts how many you have
+left. Work down the list in order:
+
+| # | Key | Time | What it does |
+|---|---|---|---|
+| 1 | Anthropic (Claude) | 2 min | Writes replies, designs each site |
+| 2 | Inkbox | 3 min | The mailbox that sends and receives |
+| 3 | Netlify | 2 min | Puts each site online |
+| 4 | Stripe | 3 min | Takes the payment |
+| 5 | Google Places | 10 min | Finds businesses with no website |
+
+Google Places is last on purpose: it's the only one that needs a card on file,
+and everything else works without it — you'd just be adding businesses by hand.
+
+Then fill in your name, studio name, **mailing address** and price, click
+**Save settings**, and click **Test connections** — every row should show a
+green check before you start.
+
+**Practise before you go live.** Start with a **Stripe TEST key**
+(`sk_test_…`), add a lead pointing at your own email address, and run the whole
+pipeline through with the test card `4242 4242 4242 4242` (any future expiry,
+any CVC). Switch to your live key (`sk_live_…`) only once you've watched a fake
+sale go through end to end.
+
+Anything you shouldn't normally touch — the Claude model name, how often the
+app checks for replies, the Inkbox handle — is tucked into **Advanced** at the
+bottom of the page, already set sensibly.
 
 Everything is stored on your Mac in
 `~/Library/Application Support/Solo Studio/` (`config.json` + a small

@@ -96,6 +96,50 @@ class PhoneGateTest(unittest.TestCase):
         html = r.data.decode()
         self.assertRegex(html, r'<a class="back" href="/"')
 
+    # -- Setup walkthrough --------------------------------------------------
+
+    def test_every_key_carries_directions(self):
+        """Each API key must tell the user where to go and what to click."""
+        import dashboard_app as dash
+        self.assertTrue(dash.KEY_FIELDS)
+        for spec in dash.KEY_FIELDS:
+            with self.subTest(key=spec.get("field")):
+                for required in ("field", "name", "job", "url", "site",
+                                 "minutes", "steps"):
+                    self.assertTrue(spec.get(required),
+                                    f"{spec.get('field')} is missing {required}")
+                self.assertTrue(spec["url"].startswith("https://"),
+                                f"{spec['field']} link must be https")
+                self.assertGreaterEqual(len(spec["steps"]), 2)
+
+    def test_setup_lists_every_key_with_its_link(self):
+        html = self.client.get(
+            "/setup", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        import dashboard_app as dash
+        for spec in dash.KEY_FIELDS:
+            self.assertIn(spec["url"], html)
+            self.assertIn(f'name="{spec["field"]}"', html)
+
+    def test_advanced_settings_still_save(self):
+        """Fields moved into the Advanced block must still round-trip."""
+        self.client.post("/setup", environ_base={"REMOTE_ADDR": "127.0.0.1"}, data={
+            "anthropic_model": "claude-opus-5",
+            "search_interval_hours": "36",
+            "poll_interval_seconds": "90",
+            "inkbox_agent_handle": "studio-bot",
+        })
+        cfg = self.core.load_config()
+        self.assertEqual(cfg["search_interval_hours"], 36)
+        self.assertEqual(cfg["poll_interval_seconds"], 90)
+        self.assertEqual(cfg["inkbox_agent_handle"], "studio-bot")
+
+    def test_blank_key_box_keeps_the_saved_key(self):
+        """Submitting the form without retyping a key must not wipe it."""
+        self._set(netlify_api_key="nfp_KEEP_ME")
+        self.client.post("/setup", environ_base={"REMOTE_ADDR": "127.0.0.1"},
+                         data={"netlify_api_key": "", "your_name": "Sam"})
+        self.assertEqual(self.core.load_config()["netlify_api_key"], "nfp_KEEP_ME")
+
     def test_jarvis_exit_is_not_hidden_on_phones(self):
         html = self.client.get(
             "/jarvis", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()

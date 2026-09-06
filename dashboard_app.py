@@ -580,41 +580,87 @@ ACTIVITY = """
 
 SETUP = """
 {% extends "base" %}{% block body %}
+<style>
+.keyhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.keyhead .n{background:#101826;color:#fff;border-radius:999px;width:22px;height:22px;
+  display:inline-flex;align-items:center;justify-content:center;font-size:12px;
+  font-weight:700;flex:0 0 auto;align-self:center}
+.keyhead h3{margin:0;font-size:15px}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
+  text-transform:uppercase;letter-spacing:.03em}
+.pill.have{background:#dcfce7;color:#15803d}
+.pill.need{background:#fef3c7;color:#92400e}
+.keycard{border:1px solid var(--line);border-radius:9px;padding:14px 16px;
+  margin-bottom:12px;background:#fff}
+.keycard.done{background:#fafdfb;border-color:#c9ead5}
+.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#3d4b5a}
+.keycard ol li{margin-bottom:5px}
+.keycard .note{font-size:12.5px;color:var(--mut);margin-top:9px;
+  border-left:3px solid var(--line);padding-left:9px}
+.progress{background:#101826;color:#fff;border-radius:9px;padding:12px 16px;
+  margin-bottom:16px;font-weight:600}
+.progress .sub{font-weight:400;opacity:.75;font-size:13px;margin-top:3px}
+details.adv{border:1px solid var(--line);border-radius:9px;padding:0 14px;
+  margin-top:16px;background:#fbfcfd}
+details.adv[open]{padding-bottom:12px}
+details.adv summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:14px}
+</style>
 <div class="card">
 <h1>Setup</h1>
-<p class="muted">Everything is saved to <code>config.json</code> on this Mac.
-Key fields show <code>saved ✓</code> when already stored — leave them blank to
-keep the saved value.</p>
+
+<div class="progress">
+  {% if keys_missing %}{{ keys_have }} of {{ key_fields|length }} keys saved —
+    {{ keys_missing }} to go
+    <div class="sub">Work down the list. Each one opens the right page for you.</div>
+  {% else %}All {{ key_fields|length }} keys saved
+    <div class="sub">Hit <b>Test connections</b> at the bottom to check every one
+      of them actually works.</div>
+  {% endif %}
+</div>
+
 <form method="post">
+<h2 style="margin-top:4px">API keys</h2>
+<p class="muted" style="margin-top:-4px">A key is just a long password that lets
+Solo Studio use a service on your behalf. Saved keys stay on this Mac and are
+never shown again — leave a box blank to keep what's already saved.</p>
+
+{% for k in key_fields %}
+<div class="keycard {% if config[k.field] %}done{% endif %}">
+  <div class="keyhead">
+    <span class="n">{{ loop.index }}</span>
+    <h3>{{ k.name }}</h3>
+    {% if config[k.field] %}<span class="pill have">saved ✓</span>
+    {% else %}<span class="pill need">needed</span>{% endif %}
+    <span class="muted" style="margin-left:auto">{{ k.minutes }}</span>
+  </div>
+  <p class="muted" style="margin:5px 0 0">{{ k.job }}</p>
+  <ol>{% for step in k.steps %}<li>{{ step|safe }}</li>{% endfor %}</ol>
+  <div style="margin-top:11px">
+    <a class="btn btn-primary" href="{{ k.url }}" target="_blank"
+       rel="noopener noreferrer">Open {{ k.site }} →</a>
+  </div>
+  <label>Paste the key here</label>
+  <input type="password" name="{{ k.field }}" placeholder="{{ k.hint }}"
+         autocomplete="off" spellcheck="false">
+  {% if k.note %}<div class="note">{{ k.note }}</div>{% endif %}
+</div>
+{% endfor %}
+
+<h2 style="margin-top:18px">Your business</h2>
 <div class="grid">
 <div>
-<h2 style="margin-top:18px">API keys</h2>
-{% for field, label, hint in key_fields %}
-<label>{{ label }}
-  {% if config[field] %}<span class="muted" style="font-weight:400">— saved ✓</span>{% endif %}</label>
-<input type="password" name="{{ field }}" placeholder="{{ hint }}" autocomplete="off">
-{% endfor %}
-<label>Inkbox agent handle <span class="muted" style="font-weight:400">
-  (blank = auto-detect if you have exactly one)</span></label>
-<input type="text" name="inkbox_agent_handle"
-  value="{{ config.inkbox_agent_handle }}">
-<label>Claude model</label>
-<input type="text" name="anthropic_model" value="{{ config.anthropic_model }}">
-</div>
-<div>
-<h2 style="margin-top:18px">Your business</h2>
 <label>Your name</label>
 <input type="text" name="your_name" value="{{ config.your_name }}">
 <label>Studio name</label>
 <input type="text" name="studio_name" value="{{ config.studio_name }}">
-<label>Mailing address <span class="muted" style="font-weight:400">
-  (shown in cold emails — legally required for commercial email in the US)</span></label>
+</div>
+<div>
+<label>Mailing address</label>
 <input type="text" name="mailing_address" value="{{ config.mailing_address }}">
+<p class="muted">Shown at the bottom of every cold email — US law requires a real
+postal address on commercial email.</p>
 <label>Website price (USD)</label>
-<input type="number" name="site_price_usd" value="{{ config.site_price_usd }}" min="1" step="1">
-<label>Background check interval (seconds)</label>
-<input type="number" name="poll_interval_seconds"
-  value="{{ config.poll_interval_seconds }}" min="30" step="10">
+<input type="number" name="site_price_usd" value="{{ price_value }}" min="1" step="1">
 </div>
 </div>
 <h2 style="margin-top:18px">Automatic lead hunting</h2>
@@ -633,9 +679,6 @@ keep the saved value.</p>
   style="width:auto;margin-right:8px">Let the Researcher hunt missing emails</label>
 <p class="muted">Uses Claude's web search to find each business's public contact
 address. It only ever suggests — you accept or reject each one.</p>
-<label>How often to search (hours)</label>
-<input type="number" name="search_interval_hours" min="1" max="168"
-  value="{{ config.search_interval_hours }}">
 <label>Max cold emails per day</label>
 <input type="number" name="daily_send_cap" min="1" max="200"
   value="{{ config.daily_send_cap }}">
@@ -696,7 +739,34 @@ created for you, with instructions here.</p>{% endif %}
 <input type="text" name="outreach_subject" value="{{ config.outreach_subject }}">
 <label>Body</label>
 <textarea name="outreach_body">{{ config.outreach_body }}</textarea>
-<div style="margin-top:16px;display:flex;gap:10px">
+<details class="adv">
+<summary>Advanced — you almost certainly don't need these</summary>
+<p class="muted">Sensible defaults are already in place. Changing these can stop
+things working, so only touch them if something specific pushed you here.</p>
+<div class="grid">
+<div>
+<label>Inkbox agent handle</label>
+<input type="text" name="inkbox_agent_handle" value="{{ config.inkbox_agent_handle }}"
+  placeholder="blank = detect it automatically">
+<p class="muted">Only needed if your Inkbox account has more than one identity.</p>
+<label>Claude model</label>
+<input type="text" name="anthropic_model" value="{{ config.anthropic_model }}">
+<p class="muted">A wrong name here breaks replies, previews and research.</p>
+</div>
+<div>
+<label>How often to hunt for new leads (hours)</label>
+<input type="number" name="search_interval_hours" min="1" max="168"
+  value="{{ config.search_interval_hours }}">
+<label>Background check interval (seconds)</label>
+<input type="number" name="poll_interval_seconds"
+  value="{{ config.poll_interval_seconds }}" min="30" step="10">
+<p class="muted">How often the app looks for new replies and payments.
+Lower is not better — it just uses more of your API allowance.</p>
+</div>
+</div>
+</details>
+
+<div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
 <button class="btn btn-primary">Save settings</button>
 <a class="btn" href="{{ url_for('setup_test') }}">Test connections</a>
 </div>
@@ -1969,12 +2039,97 @@ def resolve_event(event_id):
     return redirect(url_for("dashboard"))
 
 
+# Each key, with click-by-click directions to go and get it. Order follows the
+# pipeline: find the business, email it, design the site, host it, get paid.
 KEY_FIELDS = [
-    ("google_places_api_key", "Google Places API key", "AIza…"),
-    ("inkbox_api_key", "Inkbox API key", ""),
-    ("anthropic_api_key", "Anthropic (Claude) API key", "sk-ant-…"),
-    ("netlify_api_key", "Netlify personal access token", "nfp_…"),
-    ("stripe_secret_key", "Stripe secret key", "sk_test_… or sk_live_…"),
+    {
+        "field": "anthropic_api_key",
+        "name": "Anthropic (Claude)",
+        "job": "Writes the replies and designs each website.",
+        "hint": "sk-ant-…",
+        "url": "https://console.anthropic.com/settings/keys",
+        "site": "console.anthropic.com",
+        "minutes": "2 min",
+        "steps": [
+            "Sign in, then click <b>Create Key</b>.",
+            "Name it <i>Solo Studio</i> and click <b>Add</b>.",
+            "Copy the key <b>now</b> — the site won't show it again.",
+        ],
+        "note": "Pay-as-you-go. Add $5 of credit under Billing to start; "
+                "designing a site costs cents, not dollars.",
+    },
+    {
+        "field": "inkbox_api_key",
+        "name": "Inkbox",
+        "job": "The mailbox that sends your emails and reads the replies.",
+        "hint": "",
+        "url": "https://inkbox.ai/console",
+        "site": "inkbox.ai",
+        "minutes": "3 min",
+        "steps": [
+            "Sign up, then create an identity — this gives Solo Studio its own "
+            "email address.",
+            "Open the console's API keys section and create a key.",
+            "Copy it here.",
+        ],
+        "note": "Email only. Inkbox blocks cold text messages on purpose, so "
+                "texting isn't part of the pipeline.",
+    },
+    {
+        "field": "netlify_api_key",
+        "name": "Netlify",
+        "job": "Puts each website online at a real web address.",
+        "hint": "nfp_…",
+        "url": "https://app.netlify.com/user/applications#personal-access-tokens",
+        "site": "app.netlify.com",
+        "minutes": "2 min",
+        "steps": [
+            "Sign in — the page opens on <b>Applications</b>.",
+            "Under <b>Personal access tokens</b> click <b>New access token</b>.",
+            "Name it <i>Solo Studio</i>, leave the expiry as-is, click "
+            "<b>Generate token</b>, and copy it.",
+        ],
+        "note": "Netlify's free tier is plenty for the sites you'll be selling.",
+    },
+    {
+        "field": "stripe_secret_key",
+        "name": "Stripe",
+        "job": "Takes the payment. Nothing ships until Stripe says it cleared.",
+        "hint": "sk_test_… to practise, sk_live_… for real money",
+        "url": "https://dashboard.stripe.com/test/apikeys",
+        "site": "dashboard.stripe.com",
+        "minutes": "3 min",
+        "steps": [
+            "Sign up. The link opens <b>Test mode</b> — stay there for now.",
+            "Find <b>Secret key</b>, click <b>Reveal test key</b>, copy it.",
+            "Paste it here and practise the whole flow with the test card "
+            "<code>4242 4242 4242 4242</code>, any future expiry, any CVC.",
+        ],
+        "note": "Start with the TEST key (sk_test_…). Swap to your live key only "
+                "once you've watched a fake sale go through end to end.",
+    },
+    {
+        "field": "google_places_api_key",
+        "name": "Google Places",
+        "job": "Finds local businesses that don't have a website yet.",
+        "hint": "AIza…",
+        "url": "https://console.cloud.google.com/",
+        "site": "console.cloud.google.com",
+        "minutes": "10 min",
+        "steps": [
+            "Click the project dropdown at the top → <b>New Project</b> → name it "
+            "<i>Solo Studio</i> → <b>Create</b>.",
+            "Menu → <b>Billing</b> → link a card. Google requires one for Places; "
+            "normal use stays inside the free monthly allowance.",
+            "Menu → <b>APIs &amp; Services → Library</b> → search "
+            "<b>Places API (New)</b> → <b>Enable</b>.",
+            "Menu → <b>APIs &amp; Services → Credentials</b> → "
+            "<b>Create credentials → API key</b> → copy it.",
+        ],
+        "note": "The fiddliest one, and the only one that needs a card on file. "
+                "Save it for last — everything else works without it, you'd just "
+                "be adding businesses by hand.",
+    },
 ]
 
 
@@ -1982,7 +2137,8 @@ KEY_FIELDS = [
 def setup():
     if request.method == "POST":
         cfg = core.load_config()
-        for field, _label, _hint in KEY_FIELDS:
+        for spec in KEY_FIELDS:
+            field = spec["field"]
             val = (request.form.get(field) or "").strip()
             if val:  # blank = keep existing
                 cfg[field] = val
@@ -2020,7 +2176,11 @@ def setup():
         return redirect(url_for("setup"))
     ip = lan_ip()
     target = request.url_root if CLOUD_MODE else f"http://{ip}:{PORT}/"
+    have = sum(1 for k in KEY_FIELDS if STATE.config.get(k["field"]))
+    price = core.fmt_price(STATE.config.get("site_price_usd", 500))
     return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=ip,
+                   keys_have=have, keys_missing=len(KEY_FIELDS) - have,
+                   price_value=price,
                    phone_qr=qr_svg(target))
 
 
