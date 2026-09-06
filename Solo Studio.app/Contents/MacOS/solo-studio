@@ -6,6 +6,7 @@ set -u
 
 RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
 SUPPORT="$HOME/Library/Application Support/Solo Studio"
+VENV="$SUPPORT/venv"
 LOG="$SUPPORT/launcher.log"
 mkdir -p "$SUPPORT"
 exec >> "$LOG" 2>&1
@@ -20,10 +21,48 @@ notify() {
     /usr/bin/osascript -e "display notification \"$1\" with title \"Solo Studio\"" >/dev/null 2>&1 || true
 }
 
-# If the dashboard is already running, just open it in the browser.
+# Something already listening on our port? It may be an OLDER copy of Solo
+# Studio left running in the background. Handing the user that one is why
+# "I installed the update but the app looks the same" happens, so compare
+# what it is running against what we are about to run.
 if /usr/bin/nc -z 127.0.0.1 8747 >/dev/null 2>&1; then
-    /usr/bin/open "http://127.0.0.1:8747/"
-    exit 0
+    RUNNING_CODE="$(/usr/bin/curl -s --max-time 4 http://127.0.0.1:8747/health \
+        | /usr/bin/sed -n 's/.*"code" *: *"\([^"]*\)".*/\1/p')"
+    echo "already running, its code: ${RUNNING_CODE:-unknown}"
+    STOP_IT=0
+    if [ -z "$RUNNING_CODE" ]; then
+        STOP_IT=1            # too old to report a version — definitely not current
+    fi
+    # Compare against whichever copy we would launch (updated, else bundled).
+    for DIR in "$SUPPORT/app" "$RES"; do
+        [ -f "$DIR/dashboard_app.py" ] || continue
+        [ -x "$VENV/bin/python3" ] || { STOP_IT=1; break; }
+        OURS="$("$VENV/bin/python3" -c "
+import sys; sys.path.insert(0, sys.argv[1])
+import solo_studio_agent as c; print(c.code_fingerprint(sys.argv[1]))" "$DIR" 2>/dev/null)"
+        echo "would run: $DIR (code ${OURS:-unknown})"
+        [ -n "$OURS" ] && [ "$OURS" != "$RUNNING_CODE" ] && STOP_IT=1
+        break
+    done
+    if [ "$STOP_IT" = "1" ]; then
+        notify "Closing the older copy of Solo Studio…"
+        echo "different version running — stopping it"
+        OLD_PIDS="$(/usr/sbin/lsof -ti tcp:8747 2>/dev/null)"
+        [ -n "$OLD_PIDS" ] && kill $OLD_PIDS 2>/dev/null
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            /usr/bin/nc -z 127.0.0.1 8747 >/dev/null 2>&1 || break
+            /bin/sleep 0.5
+        done
+        # Still stuck? Insist.
+        if /usr/bin/nc -z 127.0.0.1 8747 >/dev/null 2>&1; then
+            [ -n "$OLD_PIDS" ] && kill -9 $OLD_PIDS 2>/dev/null
+            /bin/sleep 1
+        fi
+    else
+        echo "same version already running — just showing it"
+        /usr/bin/open "http://127.0.0.1:8747/"
+        exit 0
+    fi
 fi
 
 # Find a suitable Python. The app needs 3.11–3.13: the Python bundled with
@@ -57,7 +96,6 @@ if [ -z "$PY" ]; then
 fi
 
 # Private environment with the app's dependencies.
-VENV="$SUPPORT/venv"
 if [ ! -x "$VENV/bin/python3" ] || ! "$VENV/bin/python3" -c 'import flask, requests, anthropic, inkbox' >/dev/null 2>&1; then
     notify "First-time setup: installing components (about a minute)…"
     rm -rf "$VENV"

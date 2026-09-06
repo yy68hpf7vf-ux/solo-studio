@@ -990,7 +990,9 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;
 
 @app.get("/health")
 def health():
-    return {"app": HEALTH_MARKER}
+    # `code` lets the launcher notice that a different version is already
+    # running, instead of silently handing the user the old one.
+    return {"app": HEALTH_MARKER, "code": core.code_fingerprint()}
 
 
 def _live_snapshot() -> dict:

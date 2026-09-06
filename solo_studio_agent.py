@@ -49,6 +49,21 @@ UPDATE_FILES = ("solo_studio_agent.py", "dashboard_app.py", "requirements.txt")
 RESTART_EXIT_CODE = 42          # the launcher relaunches on this code
 
 
+def code_fingerprint(directory: str | None = None) -> str:
+    """Short hash of the app's own code, so the launcher can tell whether the
+    copy already running is the same one it is about to start."""
+    import hashlib
+    d = directory or os.path.dirname(os.path.abspath(__file__))
+    h = hashlib.sha256()
+    for name in ("solo_studio_agent.py", "dashboard_app.py"):
+        try:
+            with open(os.path.join(d, name), "rb") as f:
+                h.update(f.read())
+        except OSError:
+            return ""
+    return h.hexdigest()[:12]
+
+
 def updates_dir() -> str:
     d = os.path.join(app_data_dir(), "app")
     os.makedirs(d, exist_ok=True)
