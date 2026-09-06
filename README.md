@@ -204,6 +204,12 @@ are wired up to it, so it structurally cannot act however you phrase the
 request. It tells you which page and which button instead. The payment gate is
 described to it as something never to work around.
 
+**It's on JARVIS too.** There's an `▸ ASK JARVIS ANYTHING…` bar along the
+bottom of the JARVIS screen — start typing anywhere on the HUD and it takes the
+keystrokes. Answers print into a terminal-style console over the HUD; **Esc**
+or **Close** puts you back. It's the same conversation as the Ask page, so you
+can start a question on one screen and carry on from the other.
+
 Your chat is saved in the app's database, so it's still there tomorrow and on
 your phone. **Clear chat** wipes it. Answers use your own Anthropic key — the
 same one that designs the sites — so they cost a fraction of a cent each.

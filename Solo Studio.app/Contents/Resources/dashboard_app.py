@@ -1063,6 +1063,44 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
 #feedlines .k.pay{color:var(--grn)} #feedlines .k.err{color:var(--red)}
 #feedlines .k.warn{color:var(--amber)}
 
+/* ---- ask console ---- */
+#askbar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;
+  align-items:center;gap:12px;padding:11px 22px;
+  background:rgba(1,6,12,.985);backdrop-filter:blur(7px);
+  border-top:1px solid rgba(90,215,255,.3)}
+#askbar .caret{color:var(--cy);font-size:13px;letter-spacing:.2em;flex:0 0 auto}
+#askbar input{flex:1;min-width:0;background:transparent;border:0;outline:0;
+  color:var(--ink);font:inherit;font-size:14px;letter-spacing:.04em}
+#askbar input::placeholder{color:var(--dim);letter-spacing:.14em}
+#askbar .hint{color:var(--dim);font-size:10px;letter-spacing:.18em;flex:0 0 auto}
+body.alert #askbar{border-top-color:rgba(255,180,84,.4)}
+
+/* Starts below the top bar so the clock and the way out stay reachable while
+   the console is open. Near-opaque — the HUD behind it must not compete with
+   the text. */
+#console{position:fixed;left:0;right:0;bottom:0;top:64px;z-index:14;
+  display:none;flex-direction:column;padding:14px 22px 60px;
+  background:rgba(1,6,12,.985);backdrop-filter:blur(7px);
+  border-top:1px solid rgba(90,215,255,.16)}
+#console.on{display:flex}
+#console .chead{display:flex;align-items:center;gap:12px;flex:0 0 auto;
+  border-bottom:1px solid rgba(90,215,255,.22);padding-bottom:9px;margin-bottom:12px}
+#console .chead b{color:var(--cy2);font-size:12px;letter-spacing:.28em;font-weight:600}
+#console .x{margin-left:auto;color:var(--dim);cursor:pointer;font-size:11px;
+  letter-spacing:.18em;border:1px solid rgba(90,215,255,.3);border-radius:5px;
+  padding:5px 11px;background:transparent;font-family:inherit}
+#console .x:hover{color:var(--cy);border-color:var(--cy)}
+#lines{flex:1;overflow-y:auto;font-size:13.5px;line-height:1.62;padding-right:6px}
+#lines .turn{margin-bottom:15px;max-width:900px}
+#lines .who{font-size:10px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
+#lines .you .who{color:var(--cy)}
+#lines .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#cfe9f8}
+#lines .you .body{color:var(--cy2)}
+#lines .bad .body{color:var(--red)}
+#lines .body::after{content:"";display:inline-block;width:7px;height:14px;
+  vertical-align:-2px;margin-left:3px;background:var(--cy);opacity:0}
+#lines .typing .body::after{opacity:1;animation:blink 1s step-end infinite}
+
 /* ---- boot sequence ---- */
 #boot{position:fixed;inset:0;z-index:20;background:#02080f;padding:9vh 8vw;
   font-size:13px;color:var(--cy);letter-spacing:.06em}
@@ -1079,6 +1117,14 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
   .top .clock{margin-left:auto;font-size:15px}
   .top .greet{order:9;flex-basis:100%;white-space:normal}
   .back{order:-1}                     /* the exit comes first on a phone */
+  .hud{padding-bottom:70px}           /* clear the ask bar pinned at the bottom */
+  #askbar{padding:10px 14px;gap:8px}
+  #askbar .hint{display:none}
+  #askbar input{font-size:16px}       /* 16px stops iOS zooming on focus */
+  #console{padding:16px 14px 62px;bottom:0;top:0}
+  #console .chead b{font-size:11px;letter-spacing:.18em}
+  #console #cstatus{display:none}   /* no room for it next to the close button */
+  #console .x{white-space:nowrap;padding:7px 12px}
   .bracket{display:none}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 10px;padding-bottom:14px}
   /* two lines reserved for every label, so wrapped ones don't shove
@@ -1148,6 +1194,22 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
     <div id="feedlines"></div>
   </div>
 </div>
+<div id="console" aria-live="polite">
+  <div class="chead">
+    <b>J.A.R.V.I.S CONSOLE</b>
+    <span class="label" id="cstatus">standing by</span>
+    <button class="x" id="cclose" type="button">CLOSE  ESC</button>
+  </div>
+  <div id="lines"></div>
+</div>
+
+<form id="askbar" autocomplete="off">
+  <span class="caret">▸</span>
+  <input id="askq" placeholder="ASK JARVIS ANYTHING…" autocomplete="off"
+         spellcheck="false" aria-label="Ask JARVIS">
+  <span class="hint">ENTER TO SEND</span>
+</form>
+
 <script>
 (function(){
   /* ---- reactor furniture ---- */
@@ -1325,6 +1387,111 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
       .catch(function(){ document.getElementById('coreState').textContent = 'LINK LOST — RETRYING'; });
   }
   setInterval(refresh, 4000); refresh();
+
+  /* ---- ask console -------------------------------------------------------
+     Same endpoints as the Ask page, so one conversation follows you between
+     the two screens. Advisory only — there is nothing here that can act. */
+  var panel = document.getElementById('console'),
+      lines = document.getElementById('lines'),
+      status = document.getElementById('cstatus'),
+      bar = document.getElementById('askbar'),
+      input = document.getElementById('askq'),
+      busy = false, loaded = false;
+
+  function turn(who, text, cls){
+    var wrap = document.createElement('div');
+    wrap.className = 'turn ' + (cls || '');
+    var w = document.createElement('div'); w.className = 'who'; w.textContent = who;
+    var b = document.createElement('div'); b.className = 'body'; b.textContent = text;
+    wrap.appendChild(w); wrap.appendChild(b);
+    lines.appendChild(wrap);
+    lines.scrollTop = lines.scrollHeight;
+    return wrap;
+  }
+
+  /* Reveal an answer the way a terminal would, but never make them wait:
+     long replies print several characters a tick so it always lands ~1s. */
+  function typeInto(wrap, text){
+    var body = wrap.querySelector('.body'), i = 0,
+        step = Math.max(1, Math.ceil(text.length / 90));
+    wrap.classList.add('typing');
+    body.textContent = '';
+    var timer = setInterval(function(){
+      i += step;
+      body.textContent = text.slice(0, i);
+      lines.scrollTop = lines.scrollHeight;
+      if (i >= text.length) { clearInterval(timer); wrap.classList.remove('typing'); }
+    }, 11);
+  }
+
+  function open(){ panel.classList.add('on'); lines.scrollTop = lines.scrollHeight; }
+  function close(){ panel.classList.remove('on'); }
+
+  function loadHistory(){
+    if (loaded) return Promise.resolve();
+    loaded = true;
+    return fetch('/ask/history').then(function(r){ return r.json(); })
+      .then(function(d){
+        (d.messages || []).forEach(function(m){
+          turn(m.role === 'user' ? 'YOU' : 'JARVIS', m.content,
+               m.role === 'user' ? 'you' : '');
+        });
+        if (!d.has_key) {
+          turn('JARVIS', 'Add your Anthropic (Claude) key on the Setup page and '
+             + 'I can start answering.', 'bad');
+        }
+      }).catch(function(){ loaded = false; });
+  }
+
+  function ask(text){
+    text = (text || '').trim();
+    if (!text || busy) return;
+    busy = true;
+    input.value = '';
+    open();
+    loadHistory().then(function(){
+      turn('YOU', text, 'you');
+      var pending = turn('JARVIS', 'thinking', 'typing');
+      status.textContent = 'processing';
+      fetch('/ask/send', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text})
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        pending.classList.remove('typing');
+        if (d.ok) { typeInto(pending, d.reply); }
+        else { pending.className = 'turn bad';
+               pending.querySelector('.body').textContent =
+                 d.error || 'Something went wrong.'; }
+      })
+      .catch(function(){
+        pending.className = 'turn bad';
+        pending.querySelector('.body').textContent =
+          'Link lost — check your connection and ask again.';
+      })
+      .finally(function(){
+        busy = false;
+        status.textContent = 'standing by';
+        input.focus();
+      });
+    });
+  }
+
+  bar.addEventListener('submit', function(e){ e.preventDefault(); ask(input.value); });
+  input.addEventListener('focus', function(){ open(); loadHistory(); });
+  document.getElementById('cclose').addEventListener('click', function(){
+    close(); input.blur();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') { close(); input.blur(); return; }
+    // Start typing anywhere on the HUD and the question box takes it.
+    if (document.activeElement !== input && e.key.length === 1
+        && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      input.focus();
+    }
+  });
 })();
 </script>
 </body></html>
@@ -2352,6 +2519,14 @@ def ask_send():
         return jsonify(ok=False, error=f"Couldn't reach Claude: {str(e)[:200]}")
     db.chat_add("assistant", reply)
     return jsonify(ok=True, reply=reply)
+
+
+@app.get("/ask/history")
+def ask_history():
+    """The saved conversation, so JARVIS opens on the same thread as /ask."""
+    return jsonify(ok=True, has_key=bool(STATE.config.get("anthropic_api_key")),
+                   messages=[{"role": m["role"], "content": m["content"]}
+                             for m in STATE.db.chat_history()])
 
 
 @app.post("/ask/clear")

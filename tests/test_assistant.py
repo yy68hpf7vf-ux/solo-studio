@@ -1,6 +1,5 @@
 """The built-in Ask helper: what it sees, what it stores, and what it can't do."""
 
-import json
 import os
 import shutil
 import sys
@@ -202,6 +201,48 @@ class AssistantTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertFalse(r.json["ok"])
         self.assertIn("connection reset", r.json["error"])
+
+    # -- the JARVIS console -------------------------------------------------
+
+    def test_jarvis_carries_the_ask_console(self):
+        html = self.local("get", "/jarvis").data.decode()
+        for piece in ('id="askbar"', 'id="askq"', 'id="console"', 'id="lines"',
+                      "'/ask/send'", "'/ask/history'"):
+            self.assertIn(piece, html)
+
+    def test_jarvis_console_is_never_hidden_on_phones(self):
+        """The ask bar is how you reach it — a media query must not remove it."""
+        import re
+        html = self.local("get", "/jarvis").data.decode()
+        for block in re.findall(r"@media[^{]*max-width[^{]*\{(.*?)\n\}", html, re.S):
+            # the bar itself, not its children (#askbar .hint is allowed to hide)
+            for rule in re.findall(r"#askbar\s*\{([^{}]*)\}", block):
+                self.assertNotIn("display:none", rule.replace(" ", ""))
+
+    def test_history_endpoint_returns_the_saved_thread(self):
+        self._stub(reply="noted")
+        self.local("post", "/ask/send", json={"message": "remember this"})
+        r = self.local("get", "/ask/history")
+        self.assertTrue(r.json["ok"])
+        self.assertTrue(r.json["has_key"])
+        self.assertEqual([m["content"] for m in r.json["messages"]],
+                         ["remember this", "noted"])
+
+    def test_history_flags_a_missing_key(self):
+        cfg = self.core.load_config()
+        cfg["anthropic_api_key"] = ""
+        self.core.save_config(cfg)
+        self.dash.STATE.reload()
+        self.assertFalse(self.local("get", "/ask/history").json["has_key"])
+
+    def test_one_thread_across_both_screens(self):
+        """Asking on JARVIS and asking on /ask share the same conversation."""
+        self._stub(reply="same thread")
+        self.local("post", "/ask/send", json={"message": "asked from jarvis"})
+        seen = [m["content"] for m in self.local("get", "/ask/history").json["messages"]]
+        self.assertIn("asked from jarvis", seen)
+        page = self.local("get", "/ask").data.decode()
+        self.assertIn("asked from jarvis", page)
 
     def test_clear_empties_the_chat(self):
         self._stub()
