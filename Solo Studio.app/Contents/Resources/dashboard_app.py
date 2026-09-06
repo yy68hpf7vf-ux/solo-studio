@@ -511,6 +511,7 @@ td a:hover{color:var(--acc)}
     <span style="background:var(--warn);color:#1a1206;border-radius:999px;
     padding:1px 7px;font-size:12px;font-weight:700;margin-left:3px"
     >{{ pending_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('house_page') }}">Studio</a>
   <a href="{{ url_for('team_page') }}">Team</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('ask_page') }}">Ask</a>
@@ -1250,6 +1251,249 @@ press for that.</div>
     if (e.target.tagName === 'BUTTON') ask(e.target.textContent);
   });
   chat.scrollTop = chat.scrollHeight;
+})();
+</script>
+{% endblock %}
+"""
+
+
+HOUSE = """
+{% extends "base" %}{% block body %}
+<style>
+.house{--wall:rgba(255,186,142,.14);--warm:#ff8a5b;
+  position:relative;border:1px solid var(--wall);border-radius:20px;
+  background:linear-gradient(180deg,rgba(38,27,20,.55),rgba(20,15,12,.72));
+  padding:16px;overflow:hidden}
+.floor{display:grid;gap:12px;margin-bottom:12px}
+.floor.three{grid-template-columns:repeat(3,1fr)}
+.floor.two{grid-template-columns:repeat(2,1fr)}
+.floor.gate{grid-template-columns:1fr}
+.floor:last-child{margin-bottom:0}
+.storey{display:flex;align-items:center;gap:10px;margin:2px 0 9px;
+  font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--mut)}
+.storey::after{content:"";flex:1;height:1px;background:var(--wall)}
+
+/* ---- a room ---- */
+.room{position:relative;border:1px solid var(--wall);border-radius:13px;
+  padding:13px 14px 12px;min-height:118px;overflow:hidden;
+  background:rgba(24,18,14,.62);transition:border-color .4s,background .4s}
+.room .lamp{position:absolute;inset:-40% -10% auto -10%;height:150%;
+  pointer-events:none;opacity:.5;
+  background:radial-gradient(60% 55% at 50% 0%,var(--tint),transparent 70%)}
+.room.on{border-color:rgba(255,138,91,.3)}
+.room.on .lamp{animation:breathe 7s ease-in-out infinite}
+.room.standby .lamp{opacity:.16}
+.room.nokey{background:rgba(16,12,10,.7)}
+.room.nokey .lamp{opacity:.08}
+@keyframes breathe{0%,100%{opacity:.4}50%{opacity:.72}}
+.room .who{position:relative;display:flex;align-items:center;gap:8px}
+.room .who .ico{font-size:17px;line-height:1}
+.room .who b{font-size:13.5px;font-weight:600}
+.room .doing{position:relative;font-size:11px;color:var(--mut);margin-top:3px;
+  letter-spacing:.02em}
+.room .tag{position:absolute;top:11px;right:12px;font-size:9px;font-weight:700;
+  letter-spacing:.11em;padding:2px 7px;border-radius:999px}
+.room.on .tag{background:rgba(143,217,138,.16);color:#a8e5a3}
+.room.standby .tag{background:rgba(255,186,142,.09);color:var(--mut)}
+.room.nokey .tag{background:rgba(255,107,107,.16);color:#ff9f9f}
+/* the leads currently standing in this room */
+.pen{position:relative;display:flex;align-items:flex-end;gap:5px;
+  margin-top:11px;min-height:22px;flex-wrap:wrap}
+.mote{width:9px;height:9px;border-radius:50%;background:var(--warm);
+  box-shadow:0 0 9px var(--warm),0 0 18px rgba(255,138,91,.5);
+  animation:bob 3.4s ease-in-out infinite}
+.mote:nth-child(2){animation-delay:-.5s}.mote:nth-child(3){animation-delay:-1s}
+.mote:nth-child(4){animation-delay:-1.5s}.mote:nth-child(5){animation-delay:-2s}
+.mote:nth-child(6){animation-delay:-2.6s}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.pen .more{font-size:10.5px;color:var(--mut);align-self:center}
+.pen .empty{font-size:10.5px;color:var(--mut);opacity:.6}
+.room .num{position:absolute;right:12px;bottom:10px;font-size:26px;
+  font-weight:650;letter-spacing:-.03em;color:var(--ink);opacity:.16}
+
+/* ---- your desk: the one room the work can't get past on its own ---- */
+.desk{border:1px solid rgba(242,196,107,.32);border-radius:13px;padding:14px 16px;
+  background:linear-gradient(90deg,rgba(242,196,107,.11),rgba(242,196,107,.04));
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.desk .ico{font-size:19px}
+.desk b{font-size:14px}
+.desk .sub{font-size:11.5px;color:var(--mut);margin-top:2px}
+.desk .go{margin-left:auto}
+.desk.clear{border-color:var(--line);
+  background:linear-gradient(90deg,rgba(255,186,142,.05),transparent)}
+
+/* ---- the vault, where it all ends up ---- */
+.vault{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.vbox{border:1px solid var(--wall);border-radius:13px;padding:13px 14px;
+  background:rgba(24,18,14,.62)}
+.vbox b{display:block;font-size:23px;font-weight:650;letter-spacing:-.02em}
+.vbox.paid b{color:#a8e5a3}
+.vbox span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--mut)}
+
+/* ---- a lead moving between rooms ---- */
+#traffic{position:absolute;inset:0;pointer-events:none;z-index:5}
+.runner{position:absolute;width:10px;height:10px;border-radius:50%;
+  background:#ffd0a0;box-shadow:0 0 12px #ff8a5b,0 0 26px rgba(255,138,91,.7)}
+
+@media (max-width:800px){
+  .floor.three,.vault{grid-template-columns:1fr 1fr}
+  .room{min-height:104px}
+  .desk .go{margin-left:0;width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .room.on .lamp,.mote{animation:none}
+}
+</style>
+
+<div class="card">
+<div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap">
+  <h1 style="margin:0">The studio</h1>
+  <span class="muted">Every lead you have, in the room it's sitting in right now.</span>
+  <a class="btn btn-sm" style="margin-left:auto" href="{{ url_for('team_page') }}">
+    What each one does</a>
+</div>
+
+<div class="house" style="margin-top:14px">
+  <div id="traffic"></div>
+
+  <div class="storey">Top floor · finding them</div>
+  <div class="floor three" id="floor-3"></div>
+
+  <div class="storey">The landing · your call</div>
+  <div class="floor gate"><div class="desk" id="desk"></div></div>
+
+  <div class="storey">First floor · winning them</div>
+  <div class="floor three" id="floor-1"></div>
+
+  <div class="storey">Ground floor · getting paid</div>
+  <div class="floor two" id="floor-0"></div>
+
+  <div class="storey">The vault</div>
+  <div class="vault" id="vault"></div>
+</div>
+<p class="muted" style="margin:12px 0 0">Each dot is one real business. They
+drift down through the house as the work gets done — and nothing gets past the
+landing without you.</p>
+</div>
+
+<script>
+(function () {
+  var ROOMS = {{ rooms|tojson }};
+  var byKey = {};
+  ROOMS.forEach(function (r) { byKey[r.key] = r; });
+  var last = null, slow = window.matchMedia
+    && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function motes(n) {
+    if (!n) return '<span class="empty">empty</span>';
+    var show = Math.min(n, 6), out = '';
+    for (var i = 0; i < show; i++) out += '<span class="mote"></span>';
+    if (n > show) out += '<span class="more">+' + (n - show) + '</span>';
+    return out;
+  }
+
+  function drawRooms(rooms) {
+    [3, 1, 0].forEach(function (storey) {
+      var host = document.getElementById('floor-' + storey);
+      host.innerHTML = ROOMS.filter(function (r) { return r.storey === storey; })
+        .map(function (spec) {
+          var live = rooms[spec.key] || { count: 0, state: 'standby', note: '' };
+          var tag = live.state === 'on' ? 'ON DUTY'
+                  : live.state === 'nokey' ? 'NEEDS KEY' : 'STANDBY';
+          return '<div class="room ' + live.state + '" id="room-' + spec.key + '"'
+            + ' style="--tint:' + spec.tint + '">'
+            + '<span class="lamp"></span>'
+            + '<span class="tag">' + tag + '</span>'
+            + '<div class="who"><span class="ico">' + spec.icon + '</span>'
+            + '<b>' + spec.name + '</b></div>'
+            + '<div class="doing">' + (live.note || spec.doing) + '</div>'
+            + '<div class="pen">' + motes(live.count) + '</div>'
+            + '<span class="num">' + live.count + '</span></div>';
+        }).join('');
+    });
+  }
+
+  function drawDesk(you) {
+    var d = document.getElementById('desk'), n = you.waiting;
+    d.className = 'desk' + (n ? '' : ' clear');
+    d.innerHTML = '<span class="ico">🪑</span><div><b>'
+      + (n ? n + (n === 1 ? ' business is' : ' businesses are') + ' waiting on you'
+           : 'Nothing waiting on you')
+      + '</b><div class="sub">'
+      + (n ? 'Read the email, tap approve, and it carries on downstairs.'
+           : 'Every draft has been through you.')
+      + '</div></div>'
+      + (n ? '<a class="btn btn-primary go" href="{{ url_for('approve_queue') }}">'
+           + 'Open Approve</a>' : '');
+  }
+
+  function drawVault(v) {
+    document.getElementById('vault').innerHTML =
+      '<div class="vbox paid"><b>$' + v.collected.toLocaleString()
+        + '</b><span>Collected</span></div>'
+    + '<div class="vbox"><b>$' + v.pending.toLocaleString()
+        + '</b><span>Still owed</span></div>'
+    + '<div class="vbox"><b>' + v.delivered + '</b><span>Sites live</span></div>';
+  }
+
+  /* When a room's queue shrinks and the next one grows, something walked
+     between them — send a light along that path so you can see it happen. */
+  function runBetween(fromKey, toKey) {
+    if (slow) return;
+    var a = document.getElementById('room-' + fromKey),
+        b = document.getElementById('room-' + toKey),
+        stage = document.getElementById('traffic');
+    if (!a || !b || !stage) return;
+    var box = stage.getBoundingClientRect(),
+        ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(),
+        x1 = ra.left - box.left + ra.width / 2, y1 = ra.top - box.top + ra.height / 2,
+        x2 = rb.left - box.left + rb.width / 2, y2 = rb.top - box.top + rb.height / 2;
+    var dot = document.createElement('span');
+    dot.className = 'runner';
+    dot.style.transform = 'translate3d(' + x1 + 'px,' + y1 + 'px,0)';
+    stage.appendChild(dot);
+    dot.animate([
+      { transform: 'translate3d(' + x1 + 'px,' + y1 + 'px,0)', opacity: 0 },
+      { transform: 'translate3d(' + ((x1 + x2) / 2) + 'px,'
+                                  + ((y1 + y2) / 2 - 18) + 'px,0)', opacity: 1 },
+      { transform: 'translate3d(' + x2 + 'px,' + y2 + 'px,0)', opacity: 0 }
+    ], { duration: 1500, easing: 'cubic-bezier(.4,0,.3,1)' })
+      .onfinish = function () { dot.remove(); };
+  }
+
+  function compare(before, after) {
+    if (!before) return;
+    for (var i = 0; i < ROOMS.length - 1; i++) {
+      var here = ROOMS[i].key, next = ROOMS[i + 1].key;
+      if (after[here] && before[here] && after[next] && before[next]
+          && after[here].count < before[here].count
+          && after[next].count > before[next].count) {
+        runBetween(here, next);
+      }
+    }
+  }
+
+  function render(d) {
+    var map = {};
+    d.rooms.forEach(function (r) { map[r.key] = r; });
+    var before = last;
+    drawRooms(map); drawDesk(d.you); drawVault(d.vault);
+    compare(before, map);
+    last = map;
+  }
+
+  function poll() {
+    if (document.hidden) return;
+    fetch('/house/data').then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) render(d); })
+      .catch(function () {});
+  }
+  render({{ initial|tojson }});     /* first paint sets the baseline, not a move */
+  setInterval(poll, 4000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) poll();
+  });
 })();
 </script>
 {% endblock %}
@@ -2319,6 +2563,80 @@ on its own.</p>
 """
 
 
+# The eight specialists laid out as rooms, in the order work moves through
+# them. Each row is (key, storey, icon, name, what the number in the room means).
+HOUSE_ROOMS = [
+    ("scout",       3, "🔭", "Scout",      "leads found"),
+    ("researcher",  3, "🕵️", "Researcher", "hunting an email"),
+    ("copywriter",  3, "✍️", "Copywriter", "drafts written"),
+    ("triage",      1, "📬", "Triage",     "waiting on a reply"),
+    ("designer",    1, "🎨", "Designer",   "being designed"),
+    ("deployer",    1, "🚀", "Deployer",   "preview out"),
+    ("biller",      0, "💳", "Biller",     "awaiting payment"),
+    ("delivery",    0, "📦", "Delivery",   "paid, shipping"),
+]
+
+
+def _house_state() -> dict:
+    """Where every lead is standing right now, room by room.
+
+    The Team page answers "what does each specialist do"; this answers "what is
+    each of them holding at this second", which is what makes the house move.
+    """
+    db, cfg = STATE.db, STATE.config
+    leads = db.all_leads()
+    ev = db.event_counts()
+    auto = bool(cfg.get("autopilot_enabled"))
+
+    def at(*stages):
+        return sum(1 for l in leads if l["stage"] in stages)
+
+    waiting = len(db.leads_awaiting_approval())
+    needs_email = len(db.leads_needing_email())
+
+    def room(key, ready, on, count, missing=""):
+        return {"key": key, "count": count,
+                "state": "nokey" if not ready else ("on" if on else "standby"),
+                "note": missing if not ready else ""}
+
+    anth = bool(cfg.get("anthropic_api_key"))
+    rooms = [
+        room("scout", bool(cfg.get("google_places_api_key")),
+             bool(cfg.get("auto_search_enabled")), len(leads),
+             "Needs your Google Places key"),
+        room("researcher", anth, bool(cfg.get("auto_research_enabled")),
+             needs_email, "Needs your Anthropic key"),
+        room("copywriter", bool(cfg.get("inkbox_api_key")), True, waiting,
+             "Needs your Inkbox key"),
+        room("triage", anth, auto, at(core.STAGE_CONTACTED),
+             "Needs your Anthropic key"),
+        room("designer", anth, auto, at(core.STAGE_BUILDING_PREVIEW),
+             "Needs your Anthropic key"),
+        room("deployer", bool(cfg.get("netlify_api_key")), auto,
+             at(core.STAGE_PREVIEW_SENT), "Needs your Netlify token"),
+        room("biller", bool(cfg.get("stripe_secret_key")), auto,
+             at(core.STAGE_SENDING_PAYMENT_LINK, core.STAGE_PAYMENT_LINK_SENT),
+             "Needs your Stripe key"),
+        room("delivery", bool(cfg.get("netlify_api_key")) and
+             bool(cfg.get("stripe_secret_key")), auto,
+             at(core.STAGE_PAID, core.STAGE_DEPLOYING_FINAL),
+             "Needs your Netlify and Stripe keys"),
+    ]
+
+    latest = db.recent_events(1)
+    return {
+        "rooms": rooms,
+        "you": {"waiting": waiting, "attention": len(db.attention_events())},
+        "vault": {"collected": db.revenue_cents() // 100,
+                  "pending": db.pending_cents() // 100,
+                  "delivered": at(core.STAGE_DELIVERED)},
+        "autopilot": auto,
+        "emails_today": db.sends_today(),
+        "replies": ev.get("reply_received", 0),
+        "last_event": latest[0]["id"] if latest else 0,
+    }
+
+
 def _team_roster():
     """The pipeline described as the specialists who actually do each job."""
     db, cfg = STATE.db, STATE.config
@@ -2432,6 +2750,27 @@ def _team_roster():
         if missing:
             m["gate"] = missing
     return members
+
+
+ROOM_TINT = {
+    "scout": "rgba(255,138,91,.5)",      "researcher": "rgba(125,190,230,.42)",
+    "copywriter": "rgba(190,150,240,.42)", "triage": "rgba(242,196,107,.45)",
+    "designer": "rgba(244,114,182,.4)",  "deployer": "rgba(110,205,195,.42)",
+    "biller": "rgba(143,217,138,.42)",   "delivery": "rgba(255,168,96,.45)",
+}
+
+
+@app.get("/house")
+def house_page():
+    rooms = [{"key": k, "storey": storey, "icon": icon, "name": name,
+              "doing": doing, "tint": ROOM_TINT[k]}
+             for k, storey, icon, name, doing in HOUSE_ROOMS]
+    return _render(HOUSE, rooms=rooms, initial=_house_state())
+
+
+@app.get("/house/data")
+def house_data():
+    return jsonify(_house_state())
 
 
 @app.get("/team")

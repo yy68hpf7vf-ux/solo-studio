@@ -223,6 +223,19 @@ Your chat is saved in the app's database, so it's still there tomorrow and on
 your phone. **Clear chat** wipes it. Answers use your own Anthropic key — the
 same one that designs the sites — so they cost a fraction of a cent each.
 
+### The studio — the house the work moves through
+
+Open **Studio** to see the whole business as a cutaway house. Each specialist
+has a room, and every lead you have is a dot standing in the room it's actually
+in: Scout, Researcher and Copywriter on the top floor finding and preparing;
+**your desk on the landing**, which nothing gets past without you tapping
+approve; Triage, Designer and Deployer below that; Biller and Delivery on the
+ground floor; and the vault at the bottom with what you've collected.
+
+It's live. Rooms with a missing key sit dark and say which key. Rooms on duty
+breathe. And when a deal actually moves — a reply lands, a payment clears — you
+see the light travel from one room to the next.
+
 ### The team
 
 Open the **Team** page to see all eight specialists, what each has done, and
@@ -291,6 +304,8 @@ the EU's ePrivacy rules are much stricter).
   resume, concurrency races.
 - `tests/test_assistant.py` — the Ask helper: what it can see, what it stores,
   and that it is never handed tools it could act with.
+- `tests/test_house.py` — the Studio: every lead in exactly one room, rooms
+  moving when a deal moves, and the landing counting what's waiting on you.
 
 ```bash
 pip install flask requests anthropic inkbox
