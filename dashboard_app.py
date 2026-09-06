@@ -53,6 +53,9 @@ STATE = State()
 # proxy every request can look local.
 CLOUD_PASSWORD = os.environ.get("SOLO_STUDIO_PASSWORD", "").strip()
 CLOUD_MODE = bool(CLOUD_PASSWORD)
+# Version this process started with — compared against what is installed
+# on disk so we can tell the user a restart is needed.
+RUNNING_SHA = core.installed_version().get("sha", "")
 MIN_CLOUD_PASSWORD = 10
 
 
@@ -342,6 +345,8 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:13px}
   <a href="{{ url_for('team_page') }}">Team</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('setup') }}">Setup</a>
+  <a href="{{ url_for('updates_page') }}">Updates{% if update_ready %}
+    <span style="color:#4ade80">●</span>{% endif %}</a>
   <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#7dd3fc">◉ JARVIS</a>
   {% if cloud_mode %}<form class="inline" method="post" action="{{ url_for('logout') }}">
   <button class="btn btn-sm" style="background:transparent;color:#cbd5e1;border-color:#334155">
@@ -735,7 +740,7 @@ def _inject():
         stamp = ""
     return {"config": STATE.config, "pwa_meta": PWA_META,
             "cloud_mode": CLOUD_MODE, "pending_count": pending,
-            "live_stamp": stamp}
+            "live_stamp": stamp, "update_ready": _restart_pending()}
 
 
 def _render(tpl, **ctx):
@@ -1569,6 +1574,119 @@ def run_research():
     except Exception as e:
         flash(str(e), "err")
     return redirect(url_for("approve_queue"))
+
+
+
+UPDATES_PAGE = """
+{% extends "base" %}{% block body %}
+<div class="card">
+<h1>Updates</h1>
+{% if cloud_mode %}
+<p>This copy runs in the cloud, and your host redeploys it automatically
+whenever the code changes — <b>there's nothing for you to do</b>. Updates just
+appear.</p>
+{% else %}
+  {% if not info.ok %}
+    <p style="color:var(--bad)">{{ info.error }}</p>
+    <form method="post" action="{{ url_for('check_update') }}">
+      <button class="btn">Try again</button></form>
+  {% elif info.available %}
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;
+      padding:14px 16px;margin-bottom:14px">
+      <div style="font-weight:600;font-size:16px">An update is ready</div>
+      <div class="muted" style="margin-top:4px">{{ info.message }}</div>
+      <div class="muted">Released {{ info.date }} · version {{ info.short }}</div>
+    </div>
+    <form method="post" action="{{ url_for('do_update') }}">
+      <button class="btn btn-primary">Install update</button></form>
+    <p class="muted" style="margin-bottom:0">Takes a few seconds. Your leads,
+    settings and API keys are untouched — they live outside the app.</p>
+  {% else %}
+    <p>✅ <b>You're up to date.</b> <span class="muted">Version {{ info.short }},
+    released {{ info.date }}.</span></p>
+    <form method="post" action="{{ url_for('check_update') }}">
+      <button class="btn">Check again</button></form>
+  {% endif %}
+  {% if restart_needed %}
+    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;
+      padding:14px 16px;margin-top:14px">
+      <div style="font-weight:600">Update installed — restart to use it</div>
+      <form method="post" action="{{ url_for('do_restart') }}" style="margin-top:8px">
+        <button class="btn btn-primary">Restart Solo Studio</button></form>
+      <div class="muted" style="margin-top:6px">The page will go blank for a few
+      seconds, then come back on its own.</div>
+    </div>
+  {% endif %}
+{% endif %}
+</div>
+{% endblock %}
+"""
+
+
+def _restart_pending() -> bool:
+    """True when installed code is newer than what this process is running."""
+    return bool(core.installed_version().get("sha")
+                and core.installed_version().get("sha") != RUNNING_SHA)
+
+
+@app.get("/updates")
+def updates_page():
+    info = {"ok": True, "available": False, "short": "—", "date": ""}
+    if not CLOUD_MODE:
+        info = core.check_for_update()
+    return _render(UPDATES_PAGE, info=info, restart_needed=_restart_pending())
+
+
+@app.post("/action/check_update")
+def check_update():
+    return redirect(url_for("updates_page"))
+
+
+@app.post("/action/update")
+def do_update():
+    result = core.apply_update()
+    if result.get("ok"):
+        flash(f"Update {result['short']} installed. Restart to start using it.", "ok")
+    else:
+        flash(result.get("error", "Update failed."), "err")
+    return redirect(url_for("updates_page"))
+
+
+@app.post("/action/restart")
+def do_restart():
+    """Exit with the launcher's restart code; the launcher starts us again."""
+    if CLOUD_MODE:
+        flash("The cloud version restarts itself on deploy.", "err")
+        return redirect(url_for("updates_page"))
+
+    def bye():
+        time.sleep(0.7)          # let this response reach the browser first
+        os._exit(core.RESTART_EXIT_CODE)
+
+    threading.Thread(target=bye, daemon=True).start()
+    return render_template_string(RESTARTING_PAGE, pwa_meta=PWA_META)
+
+
+RESTARTING_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Restarting…</title>{{ pwa_meta|safe }}
+<style>body{background:#04101d;color:#dff3ff;font:16px -apple-system,sans-serif;
+display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;
+text-align:center}h1{font-size:19px;letter-spacing:.2em;color:#9fe8ff}
+.dot{animation:b 1.2s infinite}@keyframes b{50%{opacity:.25}}</style></head>
+<body><div><h1>RESTARTING<span class="dot">…</span></h1>
+<p class="muted">This page comes back on its own.</p></div>
+<script>
+(function retry() {
+  setTimeout(function () {
+    fetch('/health', { cache: 'no-store' })
+      .then(function (r) { if (r.ok) location.href = '/'; else retry(); })
+      .catch(retry);
+  }, 1500);
+})();
+</script>
+</body></html>"""
 
 
 @app.get("/activity")

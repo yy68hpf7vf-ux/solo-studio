@@ -79,4 +79,44 @@ if [ ! -x "$VENV/bin/python3" ] || ! "$VENV/bin/python3" -c 'import flask, reque
     notify "Setup finished — opening your dashboard."
 fi
 
-exec "$VENV/bin/python3" "$RES/dashboard_app.py" --open-browser
+# Prefer self-updated code from Application Support over the bundled copy.
+# Both files must compile, or we fall back to the version inside the app.
+APPDIR="$SUPPORT/app"
+choose_code() {
+    if [ -f "$APPDIR/dashboard_app.py" ] && [ -f "$APPDIR/solo_studio_agent.py" ]; then
+        if "$VENV/bin/python3" -c "import py_compile,sys
+for f in sys.argv[1:]: py_compile.compile(f, doraise=True)" \
+            "$APPDIR/dashboard_app.py" "$APPDIR/solo_studio_agent.py" 2>/dev/null; then
+            # An update may need components the bundled version didn't.
+            if [ -f "$APPDIR/requirements.txt" ]; then
+                "$VENV/bin/python3" -m pip install --prefer-binary -q \
+                    -r "$APPDIR/requirements.txt" >> "$SUPPORT/pip-install.log" 2>&1 || true
+            fi
+            echo "$APPDIR"
+            return
+        fi
+        echo "updated copy failed to compile — falling back to the bundled version"
+        notify "An update looked broken, so Solo Studio started the previous version."
+        rm -f "$APPDIR/dashboard_app.py" "$APPDIR/solo_studio_agent.py" \
+              "$APPDIR/installed.json"
+    fi
+    echo "$RES"
+}
+
+# Run, and relaunch when the app asks for a restart (exit code 42 after an update).
+FIRST=1
+while true; do
+    CODE_DIR="$(choose_code | tail -1)"
+    echo "running from: $CODE_DIR"
+    if [ "$FIRST" = "1" ]; then
+        "$VENV/bin/python3" "$CODE_DIR/dashboard_app.py" --open-browser
+    else
+        "$VENV/bin/python3" "$CODE_DIR/dashboard_app.py"
+    fi
+    status=$?
+    if [ "$status" != "42" ]; then
+        exit "$status"
+    fi
+    echo "=== restarting after update $(date) ==="
+    FIRST=0
+done

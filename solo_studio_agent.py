@@ -39,6 +39,107 @@ import requests
 
 APP_NAME = "Solo Studio"
 
+# --- self-update -----------------------------------------------------------
+# Updated code is written to a folder in Application Support, never into the
+# .app bundle: macOS guards app bundles, and editing one breaks its signature.
+# The launcher prefers that folder when it holds a valid copy.
+UPDATE_REPO = "yy68hpf7vf-ux/solo-studio"
+UPDATE_BRANCH = "claude/solo-studio-pipeline-7r9508"
+UPDATE_FILES = ("solo_studio_agent.py", "dashboard_app.py", "requirements.txt")
+RESTART_EXIT_CODE = 42          # the launcher relaunches on this code
+
+
+def updates_dir() -> str:
+    d = os.path.join(app_data_dir(), "app")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def installed_version() -> dict:
+    try:
+        with open(os.path.join(updates_dir(), "installed.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def check_for_update(timeout: int = 15) -> dict:
+    """Ask GitHub what the newest version is. Returns
+    {ok, available, sha, short, message, date, installed}."""
+    url = f"https://api.github.com/repos/{UPDATE_REPO}/commits/{UPDATE_BRANCH}"
+    try:
+        resp = requests.get(url, timeout=timeout,
+                            headers={"Accept": "application/vnd.github+json"})
+    except requests.RequestException as e:
+        return {"ok": False, "error": f"Couldn't reach GitHub: {e}"}
+    if resp.status_code != 200:
+        return {"ok": False,
+                "error": f"GitHub said {resp.status_code}. Try again shortly."}
+    data = resp.json()
+    sha = data.get("sha", "")
+    commit = data.get("commit", {})
+    installed = installed_version().get("sha", "")
+    return {
+        "ok": True,
+        "available": bool(sha) and sha != installed,
+        "sha": sha,
+        "short": sha[:7],
+        "message": (commit.get("message") or "").splitlines()[0][:120],
+        "date": (commit.get("committer") or {}).get("date", "")[:10],
+        "installed": installed[:7],
+        "never_updated": not installed,
+    }
+
+
+def apply_update(sha: str | None = None, timeout: int = 60) -> dict:
+    """Download the newest code, check it actually parses, and install it.
+
+    Nothing is overwritten until every file has downloaded and compiled, so a
+    half-finished download can't leave a broken app behind.
+    """
+    if sha is None:
+        info = check_for_update()
+        if not info.get("ok"):
+            return {"ok": False, "error": info.get("error", "Update check failed.")}
+        sha = info["sha"]
+    fetched = {}
+    for name in UPDATE_FILES:
+        url = (f"https://raw.githubusercontent.com/{UPDATE_REPO}/{sha}/{name}")
+        try:
+            resp = requests.get(url, timeout=timeout)
+        except requests.RequestException as e:
+            return {"ok": False, "error": f"Download of {name} failed: {e}"}
+        if resp.status_code != 200:
+            return {"ok": False,
+                    "error": f"Couldn't download {name} (HTTP {resp.status_code})."}
+        text = resp.text
+        if name.endswith(".py"):
+            # Guard against saving an error page or a truncated download.
+            try:
+                compile(text, name, "exec")
+            except SyntaxError as e:
+                return {"ok": False,
+                        "error": f"The downloaded {name} isn't valid Python "
+                                 f"({e}) — update cancelled, nothing changed."}
+            if len(text) < 1000:
+                return {"ok": False,
+                        "error": f"The downloaded {name} looks truncated — "
+                                 "update cancelled, nothing changed."}
+        fetched[name] = text
+
+    target = updates_dir()
+    try:
+        for name, text in fetched.items():
+            tmp = os.path.join(target, name + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, os.path.join(target, name))
+        with open(os.path.join(target, "installed.json"), "w", encoding="utf-8") as f:
+            json.dump({"sha": sha, "applied_at": _now()}, f)
+    except OSError as e:
+        return {"ok": False, "error": f"Couldn't save the update: {e}"}
+    return {"ok": True, "sha": sha, "short": sha[:7]}
+
 
 def fmt_price(value) -> str:
     """500.0 -> '500', 499.5 -> '499.50' (for email/UI copy)."""

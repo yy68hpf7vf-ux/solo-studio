@@ -88,6 +88,25 @@ tap **+**, and subscribe to the topic name Setup shows you. Your phone then
 buzzes for replies, previews, payment links, payments, and deliveries. Use
 **"Send a test notification"** to confirm it works.
 
+## Updating
+
+You never have to re-download. Open the **Updates** page in the app:
+
+1. It tells you whether a new version exists and what changed.
+2. Click **Install update**, then **Restart Solo Studio**.
+3. The page goes blank for a few seconds and comes back on the new version.
+
+Your leads, settings and API keys are never touched — they live outside the
+app's code. Updated code is written to
+`~/Library/Application Support/Solo Studio/app/`, never into the .app bundle,
+so macOS permissions and code signing stay intact. A download that isn't valid
+Python is rejected before anything is overwritten, and if an installed update
+somehow won't start, the launcher falls back to the version inside the app
+bundle and tells you.
+
+**On the cloud version there's nothing to do at all** — your host redeploys
+automatically whenever the code changes.
+
 ## Running it 24/7 in the cloud (optional)
 
 By default Solo Studio runs on your Mac, which means it only works while your
