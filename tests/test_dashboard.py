@@ -119,6 +119,51 @@ class PhoneGateTest(unittest.TestCase):
                 self.assertIsNone(pale.search(html),
                                   f"{path} paints {pale.search(html)}")
 
+    # -- the living backdrop -------------------------------------------------
+
+    def test_every_page_carries_the_backdrop(self):
+        for path in ("/", "/approve", "/team", "/activity", "/ask",
+                     "/setup", "/updates"):
+            html = self.client.get(
+                path, environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+            with self.subTest(page=path):
+                self.assertIn('id="aurora"', html)
+                self.assertEqual(html.count("<canvas"), 4)
+
+    def test_backdrop_never_blurs_a_full_screen_layer(self):
+        """A CSS blur on the moving layers is what took the page to 8fps.
+        Softness comes from the drawing instead — keep it that way."""
+        import re
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        block = re.search(r"#aurora\s*\{([^{}]*)\}", html)
+        self.assertIsNotNone(block)
+        self.assertNotIn("blur", block.group(1))
+        layer = re.search(r"#aurora canvas\s*\{([^{}]*)\}", html)
+        self.assertIsNotNone(layer)
+        self.assertNotIn("blur", layer.group(1))
+
+    def test_backdrop_can_step_itself_down(self):
+        """Slow devices must have somewhere to fall back to."""
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        self.assertIn("#aurora.tier1", html)
+        self.assertIn("#aurora.tier2", html)
+        self.assertIn("prefers-reduced-motion", html)
+
+    def test_live_feed_carries_what_the_backdrop_reacts_to(self):
+        r = self.client.get("/live", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        for key in ("active", "revenue", "paid", "leads"):
+            self.assertIn(key, r.json)
+
+    def test_refresh_pill_ignores_the_new_live_fields(self):
+        """The extra fields must not make every poll look like fresh activity."""
+        snap = dict(self.dash._live_snapshot())
+        before = self.dash._live_stamp(snap)
+        snap.update(revenue=snap["revenue"] + 500, active=snap["active"] + 3,
+                    paid=snap["paid"] + 1, leads=snap["leads"] + 9)
+        self.assertEqual(before, self.dash._live_stamp(snap))
+
     # -- JARVIS ------------------------------------------------------------
     # The exit link once existed but was hidden by `.back{display:none}` in
     # the phone stylesheet, which left no way off the JARVIS screen on a

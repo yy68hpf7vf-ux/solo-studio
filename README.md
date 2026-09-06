@@ -3,7 +3,12 @@
 An automated lead-gen + sales pipeline for a one-person web design studio.
 
 Dark by design — deep black, soft glass panels and rounded corners, to sit
-comfortably next to the rest of your Mac.
+comfortably next to the rest of your Mac. Ribbons of light drift behind the
+whole app: they lean as you move the pointer (or tilt your phone), brighten as
+the pipeline gets busier, and flare for a moment whenever a reply or a payment
+lands. If your device can't keep that smooth, the app measures its own frame
+rate and quietly steps the effect down rather than stuttering; turn on Reduce
+Motion in macOS or iOS and it stops moving altogether.
 
 **What it does, end to end:**
 
