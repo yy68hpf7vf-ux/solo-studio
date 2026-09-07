@@ -266,12 +266,13 @@ BASE = """
 <title>Solo Studio</title>
 {{ pwa_meta|safe }}
 <style>
-/* Dark glass, after the Mac desktop: near-black ground, a soft cold glow
-   behind it, and translucent rounded panels floating on top. */
+/* Dark glass, after the Mac desktop: an indigo ground, a soft glow behind it,
+   and translucent rounded panels floating on top. */
 :root{
-  /* Ember. The accent is warm, so the states that must never be confused —
+  /* Nocturne. The accent is pink, so the states that must never be confused —
      paid, waiting, broken — keep their own hues instead of all sliding into
-     orange; see the badge block below. */
+     it; error is vermillion rather than red for exactly that reason. See the
+     badge block below. */
   --bg:#0b0912; --bg2:#120e1c;
   --panel:rgba(26,20,42,.74);           /* dark glass — tinted, not transparent */
   --panel-2:rgba(26,20,42,.54);         /* one step quieter */
@@ -279,7 +280,7 @@ BASE = """
   --ink:#f0ecf7; --mut:#9689ab;
   --line:rgba(190,170,255,.11);
   --line-2:rgba(190,170,255,.065);
-  --acc:#f472b6;                        /* firelight */
+  --acc:#f472b6;                        /* hot pink */
   --acc-ink:#26071a;
   --ok:#6ee7b7; --warn:#fcd34d; --bad:#ff7a5e;
   --r-lg:18px; --r-md:12px; --r-sm:9px;
@@ -737,6 +738,22 @@ td a:hover{color:var(--acc)}
 
 DASHBOARD = """
 {% extends "base" %}{% block body %}
+<style>
+.today{display:flex;gap:13px;align-items:flex-start;margin:2px 0 18px;
+  padding-left:14px;border-left:2px solid rgba(244,114,182,.45)}
+.today .mark{font-size:15px;line-height:1.3;color:var(--acc);opacity:.8;
+  flex:0 0 auto}
+.today p{margin:0;font-size:15.5px;line-height:1.5;color:var(--ink);
+  font-style:italic;max-width:62ch}
+.today cite{display:block;font-style:normal;font-size:12px;color:var(--mut);
+  margin-top:4px;letter-spacing:.02em}
+@media (max-width:800px){ .today p{font-size:15px} }
+</style>
+<div class="today">
+  <span class="mark" aria-hidden="true">&ldquo;</span>
+  <p>{{ today_line.text }}
+    {% if today_line.source %}<cite>{{ today_line.source }}</cite>{% endif %}</p>
+</div>
 {% if not configured %}
 <div class="warnbar"><div><b>Welcome!</b> Add your API keys on the Setup page to
 get started — nothing works until then.</div>
@@ -2516,7 +2533,7 @@ def dashboard():
     order = [s for s in core.ALL_STAGES if s in counts]
     cfg = STATE.config
     configured = bool(cfg.get("inkbox_api_key") and cfg.get("anthropic_api_key"))
-    return _render(DASHBOARD, leads=leads,
+    return _render(DASHBOARD, leads=leads, today_line=core.line_for_today(),
                    stage_counts=[(s, counts[s]) for s in order],
                    attention=db.attention_events(), configured=configured)
 

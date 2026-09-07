@@ -223,6 +223,15 @@ Your chat is saved in the app's database, so it's still there tomorrow and on
 your phone. **Clear chat** wipes it. Answers use your own Anthropic key — the
 same one that designs the sites — so they cost a fraction of a cent each.
 
+### A line a day
+
+The top of the Dashboard carries one line, the same all day, a different one
+tomorrow. It cycles the whole list before anything comes round again. Most of
+them are written for this particular job — one person, cold email, a lot of
+silence between the yeses — rather than pulled from a quotes site; the few that
+are quoted are proverbs or name a source that can be pointed at. No API is
+involved, so it works on a brand-new install before any keys are in.
+
 ### The studio — the house the work moves through
 
 Open **Studio** to see the whole business as a cutaway house. Each specialist

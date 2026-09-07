@@ -33,7 +33,7 @@ import sys
 import threading
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import requests
 
@@ -154,6 +154,70 @@ def apply_update(sha: str | None = None, timeout: int = 60) -> dict:
     except OSError as e:
         return {"ok": False, "error": f"Couldn't save the update: {e}"}
     return {"ok": True, "sha": sha, "short": sha[:7]}
+
+
+# A line a day, for the top of the dashboard.
+#
+# Most of these are written for this particular job — one person, cold email,
+# a lot of silence between the yeses — because a line about *this* is worth
+# more on a Tuesday morning than a famous one about something else. The few
+# that are quoted are proverbs or are attributed to a source I can point at;
+# I would rather print no name than the wrong one.
+DAILY_LINES = [
+    ("The tenth no is closer to a yes than the first one was.", ""),
+    ("A business with no website is not a hard sell. It's an obvious one.", ""),
+    ("Send the email you'd want to receive.", ""),
+    ("Fall seven times, stand up eight.", "Japanese proverb"),
+    ("Amateurs sit and wait for inspiration, the rest of us just get up and "
+     "go to work.", "Stephen King, On Writing"),
+    ("Twenty good emails beat two hundred lazy ones.", ""),
+    ("The quiet weeks are the ones that decide it.", ""),
+    ("You are not interrupting them. You are offering to fix something "
+     "they already know is broken.", ""),
+    ("Every studio you admire started with one client who said yes.", ""),
+    ("Slow is smooth. Smooth is fast.", ""),
+    ("A no today is a maybe next spring. Keep the list.", ""),
+    ("Design the site as if they've already paid for it.", ""),
+    ("The work you do before anyone is watching is the work.", ""),
+    ("Nobody was ever talked into caring. They were shown.", ""),
+    ("Ship it slightly before you feel ready.", ""),
+    ("If you can't write the email in five sentences, you don't know the "
+     "offer well enough yet.", ""),
+    ("Being early is a kind of advantage nobody can copy.", ""),
+    ("Small and finished beats big and pending.", ""),
+    ("The person who replies at 11pm is the person who wants it.", ""),
+    ("Charge for the outcome, not the hours.", ""),
+    ("A well-run day looks boring from the outside.", ""),
+    ("Do the follow-up. That's where the money is.", ""),
+    ("Your first ten clients teach you what to sell to the next hundred.", ""),
+    ("Make it easy to say yes and impossible to misunderstand.", ""),
+    ("Consistency is a skill, not a personality trait.", ""),
+    ("The gap between the work you make and the work you want to make "
+     "closes by making more work.", ""),
+    ("Don't polish the pitch. Polish the thing you're pitching.", ""),
+    ("Answer fast. Speed reads as competence.", ""),
+    ("The best time to plant a tree was twenty years ago. "
+     "The second best time is now.", "Proverb"),
+    ("You only need this to work once to know it works.", ""),
+    ("Rejection is information, not a verdict.", ""),
+    ("Build the boring machine that runs while you sleep.", ""),
+    ("One good local business tells three others.", ""),
+    ("A deadline you set for yourself still counts.", ""),
+    ("Some days the job is just: send the next one.", ""),
+    ("Price it so you'd be glad to do it again.", ""),
+    ("You can't control the reply. You can control the sending.", ""),
+    ("Make something a stranger would pay for. Then find the stranger.", ""),
+    ("Finish something today, even if it's small.", ""),
+    ("The compounding is invisible right up until it isn't.", ""),
+]
+
+
+def line_for_today(today: date | None = None) -> dict:
+    """The same line all day, a different one tomorrow, cycling the whole list
+    before any of it comes round again."""
+    day = today or date.today()
+    text, source = DAILY_LINES[day.toordinal() % len(DAILY_LINES)]
+    return {"text": text, "source": source}
 
 
 def fmt_price(value) -> str:
