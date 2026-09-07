@@ -53,7 +53,24 @@ STATE = State()
 # there is deliberately no "local request" bypass, because behind a hosting
 # proxy every request can look local.
 BOUND_HOST = "127.0.0.1"   # set in main(); 0.0.0.0 means the phone can reach us
-HAVE_LAUNCHER = os.environ.get("SOLO_STUDIO_LAUNCHER") == "1"
+def _launcher_present() -> bool:
+    """Is something going to start us again if we exit?
+
+    Newer launchers say so outright. Older ones can't be told to — the launcher
+    lives inside the .app bundle and the in-app updater deliberately never
+    writes there, so a freshly updated app can be running under a launcher from
+    months ago. Recognise where it puts us instead: the updated-code directory
+    and the bundle's Resources are the only two places it ever runs us from, so
+    being in either means we were launched, not run by hand.
+    """
+    if os.environ.get("SOLO_STUDIO_LAUNCHER") == "1":
+        return True
+    here = os.path.dirname(os.path.abspath(__file__))
+    return (here == os.path.join(core.app_data_dir(), "app")
+            or here.endswith(os.path.join("Contents", "Resources")))
+
+
+HAVE_LAUNCHER = _launcher_present()
 CLOUD_PASSWORD = os.environ.get("SOLO_STUDIO_PASSWORD", "").strip()
 CLOUD_MODE = bool(CLOUD_PASSWORD)
 # Version this process started with — compared against what is installed

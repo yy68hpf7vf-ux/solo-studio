@@ -158,5 +158,64 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(len(self.core.Database().all_leads()), 1)
 
 
+class LauncherDetectionTest(unittest.TestCase):
+    """Whether the Restart button works.
+
+    The launcher lives in the .app bundle and the updater never writes there,
+    so freshly updated code routinely runs under a launcher from months ago.
+    Detection that relies only on the newer launcher's environment variable
+    told real users to quit and reopen every single time.
+    """
+
+    def setUp(self):
+        import dashboard_app as dash
+        self.dash = dash
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-launch-")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_LAUNCHER", None)
+
+    def _detect(self, here, env=None):
+        """Run the real check with __file__ and the env pretending to be
+        somewhere else."""
+        import solo_studio_agent as core
+        real_file = self.dash.__file__
+        old_env = os.environ.pop("SOLO_STUDIO_LAUNCHER", None)
+        old_home = os.environ.get("SOLO_STUDIO_HOME")
+        try:
+            if env:
+                os.environ["SOLO_STUDIO_LAUNCHER"] = env
+            os.environ["SOLO_STUDIO_HOME"] = self.tmp
+            self.dash.__file__ = os.path.join(here, "dashboard_app.py")
+            core.app_data_dir.cache_clear() if hasattr(
+                core.app_data_dir, "cache_clear") else None
+            return self.dash._launcher_present()
+        finally:
+            self.dash.__file__ = real_file
+            os.environ.pop("SOLO_STUDIO_LAUNCHER", None)
+            if old_env is not None:
+                os.environ["SOLO_STUDIO_LAUNCHER"] = old_env
+            if old_home is not None:
+                os.environ["SOLO_STUDIO_HOME"] = old_home
+
+    def test_updated_code_under_an_old_launcher_can_still_restart(self):
+        """The exact case that broke: new .py files, launcher too old to
+        announce itself."""
+        self.assertTrue(self._detect(os.path.join(self.tmp, "app")))
+
+    def test_a_new_launcher_announces_itself(self):
+        self.assertTrue(self._detect("/anywhere/at/all", env="1"))
+
+    def test_running_from_the_bundle_counts(self):
+        self.assertTrue(self._detect("/Applications/Solo Studio.app/"
+                                     "Contents/Resources"))
+
+    def test_run_by_hand_does_not(self):
+        """Started from a clone there is no loop, so it must say so rather
+        than exiting and leaving the user with nothing."""
+        self.assertFalse(self._detect("/Users/sam/code/solo-studio"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
