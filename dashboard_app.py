@@ -100,7 +100,7 @@ PWA_META = (
     '<meta name="apple-mobile-web-app-capable" content="yes">'
     '<meta name="mobile-web-app-capable" content="yes">'
     '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
-    '<meta name="theme-color" content="#100d0b">'
+    '<meta name="theme-color" content="#0b0912">'
 )
 
 
@@ -272,16 +272,16 @@ BASE = """
   /* Ember. The accent is warm, so the states that must never be confused —
      paid, waiting, broken — keep their own hues instead of all sliding into
      orange; see the badge block below. */
-  --bg:#100d0b; --bg2:#17120e;
-  --panel:rgba(31,24,20,.74);           /* dark glass — tinted, not transparent */
-  --panel-2:rgba(31,24,20,.54);         /* one step quieter */
+  --bg:#0b0912; --bg2:#120e1c;
+  --panel:rgba(26,20,42,.74);           /* dark glass — tinted, not transparent */
+  --panel-2:rgba(26,20,42,.54);         /* one step quieter */
   --card:var(--panel);
-  --ink:#f5ece6; --mut:#a3907f;
-  --line:rgba(255,186,142,.11);
-  --line-2:rgba(255,186,142,.065);
-  --acc:#ff8a5b;                        /* firelight */
-  --acc-ink:#22100a;
-  --ok:#8fd98a; --warn:#f2c46b; --bad:#ff6b6b;
+  --ink:#f0ecf7; --mut:#9689ab;
+  --line:rgba(190,170,255,.11);
+  --line-2:rgba(190,170,255,.065);
+  --acc:#f472b6;                        /* firelight */
+  --acc-ink:#26071a;
+  --ok:#6ee7b7; --warn:#fcd34d; --bad:#ff7a5e;
   --r-lg:18px; --r-md:12px; --r-sm:9px;
 }
 *{box-sizing:border-box}
@@ -341,24 +341,24 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 .card,.stat{transform-style:preserve-3d;
   transition:transform .35s cubic-bezier(.22,.61,.36,1),
              box-shadow .35s, border-color .35s}
-.card.lift{box-shadow:0 1px 0 rgba(255,210,175,.08) inset,
-  0 22px 62px rgba(0,0,0,.55), 0 0 46px rgba(255,138,91,.14);
-  border-color:rgba(255,138,91,.22)}
-.stat.lift{border-color:rgba(255,138,91,.3);
+.card.lift{box-shadow:0 1px 0 rgba(210,195,255,.08) inset,
+  0 22px 62px rgba(0,0,0,.55), 0 0 46px rgba(244,114,182,.14);
+  border-color:rgba(244,114,182,.22)}
+.stat.lift{border-color:rgba(244,114,182,.3);
   box-shadow:0 10px 30px rgba(0,0,0,.45)}
 /* the specular sheen that tracks the pointer across a panel */
 .card{position:relative;overflow:hidden}
 .card::after{content:"";position:absolute;inset:0;pointer-events:none;
   opacity:0;transition:opacity .35s;border-radius:inherit;
   background:radial-gradient(420px circle at var(--mx,50%) var(--my,0%),
-    rgba(255,138,91,.10), transparent 62%)}
+    rgba(244,114,182,.10), transparent 62%)}
 .card.lift::after{opacity:1}
 
 @media (prefers-reduced-motion:reduce){
   #aurora,#aurora canvas{animation:none!important;transform:none!important}
   #aurora{opacity:.55}
   body::before{background:
-    radial-gradient(58vw 42vw at 78% -6%, rgba(255,138,91,.11), transparent 62%),
+    radial-gradient(58vw 42vw at 78% -6%, rgba(244,114,182,.11), transparent 62%),
     linear-gradient(180deg,var(--bg2),var(--bg) 52%)}
   .card,.stat{transition:none}
 }
@@ -366,11 +366,11 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
   padding:13px 22px;color:var(--ink);
-  background:rgba(16,13,11,.78);backdrop-filter:saturate(160%) blur(18px);
+  background:rgba(13,10,22,.78);backdrop-filter:saturate(160%) blur(18px);
   -webkit-backdrop-filter:saturate(160%) blur(18px);
   border-bottom:1px solid var(--line-2)}
 header .brand{font-weight:650;font-size:16px;letter-spacing:-.01em}
-header a{color:#b0a094;text-decoration:none;font-weight:500;font-size:14px;
+header a{color:#a397b8;text-decoration:none;font-weight:500;font-size:14px;
   padding:5px 2px;transition:color .15s}
 header a:hover{color:var(--ink)}
 main{max-width:1120px;margin:26px auto 60px;padding:0 18px}
@@ -379,7 +379,7 @@ main{max-width:1120px;margin:26px auto 60px;padding:0 18px}
   padding:20px 22px;margin-bottom:16px;
   backdrop-filter:blur(22px) saturate(150%);
   -webkit-backdrop-filter:blur(22px) saturate(150%);
-  box-shadow:0 1px 0 rgba(255,210,175,.05) inset, 0 10px 34px rgba(0,0,0,.4)}
+  box-shadow:0 1px 0 rgba(210,195,255,.05) inset, 0 10px 34px rgba(0,0,0,.4)}
 h1{font-size:20px;margin:0 0 14px;font-weight:620;letter-spacing:-.015em}
 h2{font-size:15px;margin:0 0 10px;font-weight:600;letter-spacing:-.01em}
 
@@ -391,41 +391,41 @@ tr:last-child td{border-bottom:0}
 th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;
   letter-spacing:.07em}
 tbody tr{transition:background .12s}
-tbody tr:hover{background:rgba(255,186,142,.03)}
+tbody tr:hover{background:rgba(190,170,255,.03)}
 
 /* ---- stage badges: lit glass, not pastel stickers ---- */
 .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;
   font-weight:600;white-space:nowrap;border:1px solid transparent}
-.b-found{background:rgba(255,138,91,.15);color:#ffb494;border-color:rgba(255,138,91,.3)}
-.b-contacted{background:rgba(125,190,230,.13);color:#9fcdea;border-color:rgba(125,190,230,.26)}
-.b-preview_sent{background:rgba(242,196,107,.15);color:#f5d08a;border-color:rgba(242,196,107,.3)}
-.b-payment_link_sent{background:rgba(190,150,240,.15);color:#cbb0f2;border-color:rgba(190,150,240,.3)}
-.b-paid,.b-delivered{background:rgba(143,217,138,.15);color:#a8e5a3;border-color:rgba(143,217,138,.3)}
-.b-not_interested{background:rgba(255,186,142,.07);color:#a3907f;border-color:var(--line)}
-.b-error{background:rgba(255,107,107,.15);color:#ff9f9f;border-color:rgba(255,107,107,.32)}
+.b-found{background:rgba(244,114,182,.16);color:#f9a8d4;border-color:rgba(244,114,182,.32)}
+.b-contacted{background:rgba(129,140,248,.16);color:#a5b4fc;border-color:rgba(129,140,248,.32)}
+.b-preview_sent{background:rgba(252,211,77,.15);color:#fde68a;border-color:rgba(252,211,77,.3)}
+.b-payment_link_sent{background:rgba(103,232,249,.14);color:#8fe6f5;border-color:rgba(103,232,249,.3)}
+.b-paid,.b-delivered{background:rgba(110,231,183,.15);color:#8ff0cb;border-color:rgba(110,231,183,.3)}
+.b-not_interested{background:rgba(190,170,255,.07);color:#9689ab;border-color:var(--line)}
+.b-error{background:rgba(255,122,94,.16);color:#ffab94;border-color:rgba(255,122,94,.34)}
 .b-building_preview,.b-sending_payment_link,.b-deploying_final{
-  background:rgba(110,205,195,.14);color:#8fd8cc;border-color:rgba(110,205,195,.28)}
+  background:rgba(192,132,252,.15);color:#d8b4fe;border-color:rgba(192,132,252,.3)}
 
 /* ---- controls ---- */
 .btn{display:inline-block;border:1px solid var(--line);background:var(--panel);
   color:var(--ink);border-radius:var(--r-sm);padding:7px 13px;font-size:13px;
   font-weight:600;cursor:pointer;text-decoration:none;transition:.15s;
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.btn:hover{border-color:rgba(255,138,91,.5);color:#fff;
-  background:rgba(255,138,91,.12)}
+.btn:hover{border-color:rgba(244,114,182,.5);color:#fff;
+  background:rgba(244,114,182,.12)}
 .btn-primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
-.btn-primary:hover{background:#ff9d74;border-color:#ff9d74;color:var(--acc-ink)}
+.btn-primary:hover{background:#f78fc6;border-color:#f78fc6;color:var(--acc-ink)}
 .btn-danger{color:var(--bad)}
-.btn-danger:hover{border-color:rgba(255,107,107,.5);background:rgba(255,107,107,.12);
-  color:#ffaeae}
+.btn-danger:hover{border-color:rgba(255,122,94,.5);background:rgba(255,122,94,.12);
+  color:#ffb9a6}
 .btn-sm{padding:4px 10px;font-size:12px}
 form.inline{display:inline}
 input[type=text],input[type=password],input[type=number],textarea,select{
   width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);
   font:inherit;background:rgba(0,0,0,.28);color:var(--ink);transition:.15s}
-input:focus,textarea:focus,select:focus{outline:0;border-color:rgba(255,138,91,.55);
-  background:rgba(0,0,0,.38);box-shadow:0 0 0 3px rgba(255,138,91,.13)}
-input::placeholder,textarea::placeholder{color:#7a6857}
+input:focus,textarea:focus,select:focus{outline:0;border-color:rgba(244,114,182,.55);
+  background:rgba(0,0,0,.38);box-shadow:0 0 0 3px rgba(244,114,182,.13)}
+input::placeholder,textarea::placeholder{color:#6b6180}
 textarea{min-height:120px;line-height:1.6}
 label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
 input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:auto;
@@ -435,11 +435,11 @@ details summary::marker{color:var(--mut)}
 /* ---- notices ---- */
 .flash{padding:11px 15px;border-radius:var(--r-md);margin-bottom:14px;
   font-weight:500;border:1px solid transparent}
-.flash.ok{background:rgba(143,217,138,.12);color:#a8e5a3;border-color:rgba(143,217,138,.28)}
-.flash.err{background:rgba(255,107,107,.12);color:#ffaeae;border-color:rgba(255,107,107,.3)}
+.flash.ok{background:rgba(110,231,183,.12);color:#8ff0cb;border-color:rgba(110,231,183,.28)}
+.flash.err{background:rgba(255,122,94,.12);color:#ffb9a6;border-color:rgba(255,122,94,.3)}
 .muted{color:var(--mut);font-size:13px}
-.warnbar{background:rgba(242,196,107,.10);border:1px solid rgba(242,196,107,.28);
-  color:#f5d5a0;border-radius:var(--r-lg);padding:13px 17px;margin-bottom:16px;
+.warnbar{background:rgba(252,211,77,.10);border:1px solid rgba(252,211,77,.28);
+  color:#ffe9a3;border-radius:var(--r-lg);padding:13px 17px;margin-bottom:16px;
   display:flex;justify-content:space-between;align-items:center;gap:12px}
 .attention{border-left:3px solid var(--warn)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
@@ -455,31 +455,31 @@ details summary::marker{color:var(--mut)}
 
 /* callout boxes + the cold-email preview, shared by several pages */
 .note{border-radius:var(--r-md);padding:14px 16px;border:1px solid var(--line)}
-.note.info{background:rgba(255,138,91,.10);border-color:rgba(255,138,91,.26)}
-.note.warn{background:rgba(242,196,107,.11);border-color:rgba(242,196,107,.28)}
+.note.info{background:rgba(244,114,182,.10);border-color:rgba(244,114,182,.26)}
+.note.warn{background:rgba(252,211,77,.11);border-color:rgba(252,211,77,.28)}
 .note .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
   color:var(--acc);font-weight:600}
 .emailbox{border:1px solid var(--line);border-radius:var(--r-md);padding:13px 15px;
   background:rgba(0,0,0,.24);margin:10px 0}
 .emailbox .subj{font-weight:600;margin-bottom:7px}
-.emailbox .body{white-space:pre-wrap;font-size:13.5px;color:#cdbcae;line-height:1.6}
+.emailbox .body{white-space:pre-wrap;font-size:13.5px;color:#c3b8d6;line-height:1.6}
 
-code{background:rgba(255,186,142,.09);padding:2px 6px;border-radius:5px;
-  font-size:13px;color:#e2cdbd;
+code{background:rgba(190,170,255,.09);padding:2px 6px;border-radius:5px;
+  font-size:13px;color:#d6cce8;
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-a{color:var(--acc);text-decoration-color:rgba(255,138,91,.4);
+a{color:var(--acc);text-decoration-color:rgba(244,114,182,.4);
   text-underline-offset:2px}
 a:hover{text-decoration-color:currentColor}
 td a{color:var(--ink);text-decoration:none;font-weight:600}
 td a:hover{color:var(--acc)}
 .tablewrap{overflow-x:auto}
 ::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-thumb{background:rgba(255,186,142,.16);border-radius:6px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,186,142,.26)}
+::-webkit-scrollbar-thumb{background:rgba(190,170,255,.16);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:rgba(190,170,255,.26)}
 ::-webkit-scrollbar-track{background:transparent}
 
 #live-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;
-  background:rgba(32,25,20,.92);color:var(--ink);padding:11px 20px;
+  background:rgba(28,22,44,.92);color:var(--ink);padding:11px 20px;
   border:1px solid var(--line);border-radius:999px;
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   font-size:14px;font-weight:600;cursor:pointer;z-index:50;
@@ -518,7 +518,7 @@ td a:hover{color:var(--acc)}
   <a href="{{ url_for('setup') }}">Setup</a>
   <a href="{{ url_for('updates_page') }}">Updates{% if update_ready %}
     <span style="color:var(--ok)">●</span>{% endif %}</a>
-  <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#ffc06a">◉ JARVIS</a>
+  <a href="{{ url_for('jarvis') }}" style="margin-left:auto;color:#c4b5fd">◉ JARVIS</a>
   {% if cloud_mode %}<form class="inline" method="post" action="{{ url_for('logout') }}">
   <button class="btn btn-sm" style="background:transparent">Sign out</button>
   </form>{% endif %}
@@ -554,10 +554,10 @@ td a:hover{color:var(--acc)}
 
   /* Four bands of ribbons. Each is painted once; after that the CSS moves it. */
   var BANDS = [
-    { ribbons: 2, hue: [255,138, 91], width: 30, alpha: 0.17 },
-    { ribbons: 2, hue: [255,201,140], width: 22, alpha: 0.13 },
-    { ribbons: 2, hue: [214, 94, 58], width: 34, alpha: 0.16 },
-    { ribbons: 2, hue: [255,168, 96], width: 42, alpha: 0.11 }
+    { ribbons: 2, hue: [244,114,182], width: 30, alpha: 0.17 },
+    { ribbons: 2, hue: [129,140,248], width: 22, alpha: 0.15 },
+    { ribbons: 2, hue: [192,132,252], width: 34, alpha: 0.16 },
+    { ribbons: 2, hue: [ 99, 91,200], width: 42, alpha: 0.12 }
   ];
   var W = 360, H = 200;                       /* tiny — CSS smooths it up to full size */
 
@@ -796,7 +796,7 @@ phone call) before outreach can go out. Found businesses queue up on the
 <thead><tr><th>Business</th><th>Stage</th><th>Email</th><th>Links</th><th>Actions</th></tr></thead>
 <tbody>
 {% for l in leads %}
-<tr {% if l['error'] %}style="background:rgba(255,107,107,.07)"{% endif %}>
+<tr {% if l['error'] %}style="background:rgba(255,122,94,.07)"{% endif %}>
   <td><a href="{{ url_for('lead_page', lead_id=l['id']) }}"><b>{{ l['name'] }}</b></a>
       <div class="muted">{{ l['category'] or '' }}{% if l['address'] %} · {{ l['address'] }}{% endif %}</div>
       {% if l['error'] %}<div class="muted" style="color:var(--bad)">⚠ {{ l['error'][:120] }}</div>{% endif %}</td>
@@ -915,24 +915,24 @@ SETUP = """
 {% extends "base" %}{% block body %}
 <style>
 .keyhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.keyhead .n{background:rgba(255,186,142,.14);color:var(--ink);border-radius:999px;
+.keyhead .n{background:rgba(190,170,255,.14);color:var(--ink);border-radius:999px;
   width:22px;height:22px;
   display:inline-flex;align-items:center;justify-content:center;font-size:12px;
   font-weight:700;flex:0 0 auto;align-self:center}
 .keyhead h3{margin:0;font-size:15px}
 .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
   text-transform:uppercase;letter-spacing:.03em}
-.pill.have{background:rgba(143,217,138,.17);color:#a8e5a3}
-.pill.need{background:rgba(242,196,107,.17);color:#f5d5a0}
+.pill.have{background:rgba(110,231,183,.17);color:#8ff0cb}
+.pill.need{background:rgba(252,211,77,.17);color:#ffe9a3}
 .keycard{border:1px solid var(--line);border-radius:var(--r-md);padding:15px 17px;
   margin-bottom:11px;background:var(--panel-2)}
-.keycard.done{background:rgba(143,217,138,.06);border-color:rgba(143,217,138,.26)}
-.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#cdbcae}
+.keycard.done{background:rgba(110,231,183,.06);border-color:rgba(110,231,183,.26)}
+.keycard ol{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:#c3b8d6}
 .keycard ol li{margin-bottom:5px}
 .keycard .note{font-size:12.5px;color:var(--mut);margin-top:9px;
   border-left:3px solid var(--line);padding-left:9px}
-.progress{background:linear-gradient(135deg,rgba(255,138,91,.18),rgba(255,138,91,.06));
-  border:1px solid rgba(255,138,91,.26);color:var(--ink);border-radius:var(--r-md);
+.progress{background:linear-gradient(135deg,rgba(244,114,182,.18),rgba(244,114,182,.06));
+  border:1px solid rgba(244,114,182,.26);color:var(--ink);border-radius:var(--r-md);
   padding:13px 17px;margin-bottom:16px;font-weight:600}
 .progress .sub{font-weight:400;opacity:.75;font-size:13px;margin-top:3px}
 details.adv{border:1px solid var(--line);border-radius:var(--r-md);padding:0 15px;
@@ -1143,8 +1143,8 @@ ASK = """
   font-weight:500;border-bottom-right-radius:5px}
 .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);
   border-bottom-left-radius:5px}
-.msg.bad{align-self:flex-start;background:rgba(255,107,107,.12);color:#ffaeae;
-  border:1px solid rgba(255,107,107,.3)}
+.msg.bad{align-self:flex-start;background:rgba(255,122,94,.12);color:#ffb9a6;
+  border:1px solid rgba(255,122,94,.3)}
 .msg.think{align-self:flex-start;background:var(--panel);color:var(--mut);
   border:1px solid var(--line)}
 .askbar{display:flex;gap:8px;margin-top:12px;align-items:flex-end}
@@ -1154,8 +1154,8 @@ ASK = """
 .starters button{font:inherit;font-size:13px;background:var(--panel);cursor:pointer;
   border:1px solid var(--line);border-radius:999px;padding:7px 14px;color:var(--ink);
   transition:.15s}
-.starters button:hover{border-color:rgba(255,138,91,.5);color:#fff;
-  background:rgba(255,138,91,.13)}
+.starters button:hover{border-color:rgba(244,114,182,.5);color:#fff;
+  background:rgba(244,114,182,.13)}
 @media (max-width:800px){.chat{max-height:none}.msg{max-width:92%}}
 </style>
 <div class="card">
@@ -1260,9 +1260,9 @@ press for that.</div>
 HOUSE = """
 {% extends "base" %}{% block body %}
 <style>
-.house{--wall:rgba(255,186,142,.14);--warm:#ff8a5b;
+.house{--wall:rgba(190,170,255,.14);--warm:#f472b6;
   position:relative;border:1px solid var(--wall);border-radius:20px;
-  background:linear-gradient(180deg,rgba(38,27,20,.55),rgba(20,15,12,.72));
+  background:linear-gradient(180deg,rgba(32,24,52,.55),rgba(16,12,26,.72));
   padding:16px;overflow:hidden}
 .floor{display:grid;gap:12px;margin-bottom:12px}
 .floor.three{grid-template-columns:repeat(3,1fr)}
@@ -1276,11 +1276,11 @@ HOUSE = """
 /* ---- a room ---- */
 .room{position:relative;border:1px solid var(--wall);border-radius:13px;
   padding:13px 14px 12px;min-height:118px;overflow:hidden;
-  background:rgba(24,18,14,.62);transition:border-color .4s,background .4s}
+  background:rgba(22,17,36,.62);transition:border-color .4s,background .4s}
 .room .lamp{position:absolute;inset:-40% -10% auto -10%;height:150%;
   pointer-events:none;opacity:.5;
   background:radial-gradient(60% 55% at 50% 0%,var(--tint),transparent 70%)}
-.room.on{border-color:rgba(255,138,91,.3)}
+.room.on{border-color:rgba(244,114,182,.3)}
 .room.on .lamp{animation:breathe 7s ease-in-out infinite}
 .room.standby .lamp{opacity:.16}
 .room.nokey{background:rgba(16,12,10,.7)}
@@ -1293,14 +1293,14 @@ HOUSE = """
   letter-spacing:.02em}
 .room .tag{position:absolute;top:11px;right:12px;font-size:9px;font-weight:700;
   letter-spacing:.11em;padding:2px 7px;border-radius:999px}
-.room.on .tag{background:rgba(143,217,138,.16);color:#a8e5a3}
-.room.standby .tag{background:rgba(255,186,142,.09);color:var(--mut)}
-.room.nokey .tag{background:rgba(255,107,107,.16);color:#ff9f9f}
+.room.on .tag{background:rgba(110,231,183,.16);color:#8ff0cb}
+.room.standby .tag{background:rgba(190,170,255,.09);color:var(--mut)}
+.room.nokey .tag{background:rgba(255,122,94,.16);color:#ffab94}
 /* the leads currently standing in this room */
 .pen{position:relative;display:flex;align-items:flex-end;gap:5px;
   margin-top:11px;min-height:22px;flex-wrap:wrap}
 .mote{width:9px;height:9px;border-radius:50%;background:var(--warm);
-  box-shadow:0 0 9px var(--warm),0 0 18px rgba(255,138,91,.5);
+  box-shadow:0 0 9px var(--warm),0 0 18px rgba(244,114,182,.5);
   animation:bob 3.4s ease-in-out infinite}
 .mote:nth-child(2){animation-delay:-.5s}.mote:nth-child(3){animation-delay:-1s}
 .mote:nth-child(4){animation-delay:-1.5s}.mote:nth-child(5){animation-delay:-2s}
@@ -1309,32 +1309,46 @@ HOUSE = """
 .pen .more{font-size:10.5px;color:var(--mut);align-self:center}
 .pen .empty{font-size:10.5px;color:var(--mut);opacity:.6}
 .room .num{position:absolute;right:12px;bottom:10px;font-size:26px;
-  font-weight:650;letter-spacing:-.03em;color:var(--ink);opacity:.16}
+  font-weight:650;letter-spacing:-.03em;color:var(--ink);opacity:.16;
+  transition:opacity .25s}
+.room.has{cursor:pointer}
+.room.has:hover{border-color:rgba(244,114,182,.4);
+  box-shadow:0 0 0 1px rgba(244,114,182,.14),0 14px 40px rgba(0,0,0,.4)}
+.room.has:hover .num{opacity:.3}
+.room:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+/* who is actually standing in this room */
+.guests{position:relative;margin-top:10px;padding-top:9px;
+  border-top:1px solid var(--line-2);display:none}
+.room.open .guests{display:block}
+.room.open .pen{display:none}
+.guests div{font-size:11.5px;color:var(--ink);padding:2px 0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.guests .more{color:var(--mut)}
 
 /* ---- your desk: the one room the work can't get past on its own ---- */
-.desk{border:1px solid rgba(242,196,107,.32);border-radius:13px;padding:14px 16px;
-  background:linear-gradient(90deg,rgba(242,196,107,.11),rgba(242,196,107,.04));
+.desk{border:1px solid rgba(252,211,77,.32);border-radius:13px;padding:14px 16px;
+  background:linear-gradient(90deg,rgba(252,211,77,.11),rgba(252,211,77,.04));
   display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .desk .ico{font-size:19px}
 .desk b{font-size:14px}
 .desk .sub{font-size:11.5px;color:var(--mut);margin-top:2px}
 .desk .go{margin-left:auto}
 .desk.clear{border-color:var(--line);
-  background:linear-gradient(90deg,rgba(255,186,142,.05),transparent)}
+  background:linear-gradient(90deg,rgba(190,170,255,.05),transparent)}
 
 /* ---- the vault, where it all ends up ---- */
 .vault{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .vbox{border:1px solid var(--wall);border-radius:13px;padding:13px 14px;
-  background:rgba(24,18,14,.62)}
+  background:rgba(22,17,36,.62)}
 .vbox b{display:block;font-size:23px;font-weight:650;letter-spacing:-.02em}
-.vbox.paid b{color:#a8e5a3}
+.vbox.paid b{color:#8ff0cb}
 .vbox span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--mut)}
 
 /* ---- a lead moving between rooms ---- */
 #traffic{position:absolute;inset:0;pointer-events:none;z-index:5}
 .runner{position:absolute;width:10px;height:10px;border-radius:50%;
-  background:#ffd0a0;box-shadow:0 0 12px #ff8a5b,0 0 26px rgba(255,138,91,.7)}
+  background:#dbd9ff;box-shadow:0 0 12px #f472b6,0 0 26px rgba(244,114,182,.7)}
 
 @media (max-width:800px){
   .floor.three,.vault{grid-template-columns:1fr 1fr}
@@ -1372,9 +1386,9 @@ HOUSE = """
   <div class="storey">The vault</div>
   <div class="vault" id="vault"></div>
 </div>
-<p class="muted" style="margin:12px 0 0">Each dot is one real business. They
-drift down through the house as the work gets done — and nothing gets past the
-landing without you.</p>
+<p class="muted" style="margin:12px 0 0">Each dot is one real business.
+<b>Tap any room</b> to see who's in it. They drift down through the house as the
+work gets done — and nothing gets past the landing without you.</p>
 </div>
 
 <script>
@@ -1384,6 +1398,18 @@ landing without you.</p>
   ROOMS.forEach(function (r) { byKey[r.key] = r; });
   var last = null, slow = window.matchMedia
     && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var openRooms = {};
+
+  function guests(live) {
+    var names = live.names || [];
+    if (!names.length) return '<div class="more">nobody in here</div>';
+    var out = names.map(function (n) { return '<div>' + n + '</div>'; }).join('');
+    if (live.count > names.length) {
+      out += '<div class="more">and ' + (live.count - names.length) + ' more</div>';
+    }
+    return out;
+  }
 
   function motes(n) {
     if (!n) return '<span class="empty">empty</span>';
@@ -1401,7 +1427,11 @@ landing without you.</p>
           var live = rooms[spec.key] || { count: 0, state: 'standby', note: '' };
           var tag = live.state === 'on' ? 'ON DUTY'
                   : live.state === 'nokey' ? 'NEEDS KEY' : 'STANDBY';
-          return '<div class="room ' + live.state + '" id="room-' + spec.key + '"'
+          var open = openRooms[spec.key] ? ' open' : '';
+          var has = live.count ? ' has' : '';
+          return '<div class="room ' + live.state + has + open + '"'
+            + ' id="room-' + spec.key + '"'
+            + (live.count ? ' tabindex="0" role="button"' : '')
             + ' style="--tint:' + spec.tint + '">'
             + '<span class="lamp"></span>'
             + '<span class="tag">' + tag + '</span>'
@@ -1409,6 +1439,7 @@ landing without you.</p>
             + '<b>' + spec.name + '</b></div>'
             + '<div class="doing">' + (live.note || spec.doing) + '</div>'
             + '<div class="pen">' + motes(live.count) + '</div>'
+            + '<div class="guests">' + guests(live) + '</div>'
             + '<span class="num">' + live.count + '</span></div>';
         }).join('');
     });
@@ -1483,6 +1514,21 @@ landing without you.</p>
     last = map;
   }
 
+  document.querySelector('.house').addEventListener('click', function (e) {
+    var room = e.target.closest('.room.has');
+    if (!room) return;
+    var key = room.id.replace('room-', '');
+    openRooms[key] = !openRooms[key];
+    room.classList.toggle('open', openRooms[key]);
+  });
+  document.querySelector('.house').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var room = e.target.closest('.room.has');
+    if (!room) return;
+    e.preventDefault();
+    room.click();
+  });
+
   function poll() {
     if (document.hidden) return;
     fetch('/house/data').then(function (r) { return r.ok ? r.json() : null; })
@@ -1549,22 +1595,22 @@ JARVIS = """<!doctype html>
 <title>JARVIS — Solo Studio</title>
 PWAMETA_PLACEHOLDER
 <style>
-:root{--cy:#ffa257;--cy2:#ffd0a0;--dim:#8a6244;--amber:#ff5f43;--grn:#8fd98a;
-      --red:#ff5f43;--ink:#ffeadb;--accent:#ffa257}
+:root{--cy:#a5b4fc;--cy2:#dbd9ff;--dim:#5c5384;--amber:#ff5e8a;--grn:#6ee7b7;
+      --red:#ff5e8a;--ink:#efecff;--accent:#a5b4fc}
 *{box-sizing:border-box;margin:0}
 html,body{height:100%}
-body{background:radial-gradient(1200px 800px at 50% 42%,#241309 0%,#150d08 55%,#0a0604 100%);
+body{background:radial-gradient(1200px 800px at 50% 42%,#171233 0%,#100c22 55%,#07050f 100%);
   color:var(--ink);font:14px/1.45 "SF Mono",Menlo,Consolas,monospace;overflow:hidden}
 body.alert{--accent:var(--amber)}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
-  background-image:linear-gradient(rgba(255,162,87,.045) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,162,87,.045) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(165,180,252,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(165,180,252,.045) 1px,transparent 1px);
   background-size:44px 44px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.12) 0 2px,transparent 2px 4px)}
 /* a beam that sweeps down the whole display now and then */
 #beam{position:fixed;left:0;right:0;height:180px;z-index:3;pointer-events:none;
-  background:linear-gradient(180deg,transparent,rgba(255,162,87,.055),transparent);
+  background:linear-gradient(180deg,transparent,rgba(165,180,252,.055),transparent);
   animation:sweep 9s linear infinite}
 @keyframes sweep{0%{top:-180px}100%{top:100%}}
 /* corner brackets framing the display */
@@ -1579,11 +1625,11 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
   grid-template-rows:auto auto 1fr 196px;grid-template-columns:280px 1fr 300px;
   grid-template-areas:"top top top" "kpis kpis kpis" "left core right" "feed feed feed"}
 .label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
-.glow{text-shadow:0 0 14px rgba(255,162,87,.75),0 0 34px rgba(255,162,87,.30)}
+.glow{text-shadow:0 0 14px rgba(165,180,252,.75),0 0 34px rgba(165,180,252,.30)}
 
 /* ---- top bar ---- */
 .top{grid-area:top;display:flex;align-items:center;gap:16px;
-  border-bottom:1px solid rgba(255,162,87,.22);padding-bottom:12px}
+  border-bottom:1px solid rgba(165,180,252,.22);padding-bottom:12px}
 .top .sys{font-size:17px;letter-spacing:.34em;color:var(--cy2)}
 .top .greet{color:#8fc7e6;font-size:13px;letter-spacing:.06em;
   white-space:nowrap;overflow:hidden}
@@ -1598,17 +1644,17 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
 /* the exit — always visible, big enough to tap */
 .back{display:inline-flex;align-items:center;gap:7px;text-decoration:none;
   color:var(--cy2);font-size:12px;letter-spacing:.16em;padding:9px 16px;
-  border:1px solid rgba(255,162,87,.45);border-radius:6px;background:rgba(255,162,87,.07);
+  border:1px solid rgba(165,180,252,.45);border-radius:6px;background:rgba(165,180,252,.07);
   transition:.15s;white-space:nowrap}
-.back:hover,.back:active{background:rgba(255,162,87,.2);border-color:var(--cy);
-  box-shadow:0 0 18px rgba(255,162,87,.35)}
+.back:hover,.back:active{background:rgba(165,180,252,.2);border-color:var(--cy);
+  box-shadow:0 0 18px rgba(165,180,252,.35)}
 
 /* ---- kpi strip ---- */
 .kpis{grid-area:kpis;display:flex;flex-wrap:wrap;gap:6px 30px;
-  border-bottom:1px solid rgba(255,162,87,.14);padding:2px 0 10px}
+  border-bottom:1px solid rgba(165,180,252,.14);padding:2px 0 10px}
 .kpi .label{margin-bottom:1px}
 .kpi b{font-size:21px;color:#fff;font-weight:600}
-.kpi b.glow{text-shadow:0 0 10px rgba(255,162,87,.6)}
+.kpi b.glow{text-shadow:0 0 10px rgba(165,180,252,.6)}
 
 /* ---- money column ---- */
 .left{grid-area:left;display:flex;flex-direction:column;justify-content:center;gap:22px}
@@ -1620,23 +1666,41 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2;
 .core{grid-area:core;display:flex;flex-direction:column;align-items:center;
   justify-content:center;min-height:0}
 .reactor{width:min(40vh,380px);height:min(40vh,380px);
-  filter:drop-shadow(0 0 26px rgba(255,162,87,.35))}
+  filter:drop-shadow(0 0 26px rgba(165,180,252,.35))}
 .reactor circle,.reactor line,.reactor path{fill:none;stroke:var(--cy);
   vector-effect:non-scaling-stroke}
-.rSeg{stroke-width:7;stroke-dasharray:52 26;opacity:.85;
-  transform-origin:200px 200px;animation:spin 26s linear infinite}
-.rSeg2{stroke-width:2.4;stroke-dasharray:8 10;opacity:.7;
-  transform-origin:200px 200px;animation:spin 14s linear infinite reverse}
-.rThin{stroke-width:1;opacity:.4}
-.rSeg3{stroke-width:11;stroke-dasharray:26 42;opacity:.6;
-  transform-origin:200px 200px;animation:spin 9s linear infinite}
-.spokes line{stroke-width:1.4;opacity:.5}
-.spokes{transform-origin:200px 200px;animation:spin 60s linear infinite reverse}
-.coreGlow{animation:pulse 2.6s ease-in-out infinite}
-#sweep{transform-origin:200px 200px;animation:spin 4s linear infinite}
-.ticks line{stroke-width:1;opacity:.35}
+.rSeg{stroke-width:6;stroke-dasharray:58 30;opacity:.8;
+  transform-origin:200px 200px;animation:spin 34s linear infinite}
+.rSeg2{stroke-width:2.2;stroke-dasharray:6 12;opacity:.6;
+  transform-origin:200px 200px;animation:spin 18s linear infinite reverse}
+.rThin{stroke-width:1;opacity:.32}
+.rSeg3{stroke-width:10;stroke-dasharray:22 46;opacity:.5;
+  transform-origin:200px 200px;animation:spin 11s linear infinite}
+.rIris{stroke-width:1.6;opacity:.5;stroke-dasharray:3 7;
+  transform-origin:200px 200px;animation:spin 7s linear infinite reverse}
+.spokes line{stroke-width:1.2;opacity:.4}
+.spokes{transform-origin:200px 200px;animation:spin 74s linear infinite reverse}
+.coreGlow{animation:pulse 3s ease-in-out infinite}
+.coreRing{stroke-width:1.4;opacity:.75;stroke-dasharray:2 5;
+  transform-origin:200px 200px;animation:spin 5s linear infinite}
+#sweep{transform-origin:200px 200px;animation:spin 5s linear infinite}
+.ticks line{stroke-width:1;opacity:.3}
+
+/* the gauge — each arc is a stage of the pipeline */
+#gaugeTrack path{stroke-width:15;opacity:.16;stroke-linecap:butt}
+#gauge path{stroke-width:15;stroke-linecap:butt;cursor:default;
+  transition:stroke-dashoffset 1.1s cubic-bezier(.22,.61,.36,1),opacity .6s}
+#gauge path.lit{filter:drop-shadow(0 0 7px currentColor)}
+
+/* motes riding the ring, one per deal in flight */
+#orbit circle{fill:var(--cy2);stroke:none;opacity:.9;
+  filter:drop-shadow(0 0 6px var(--cy))}
+#orbit{transform-origin:200px 200px;animation:spin 22s linear infinite}
+
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
+@keyframes pulse{0%,100%{opacity:.82;transform:scale(1)}
+  50%{opacity:1;transform:scale(1.035)}}
+.coreGlow{transform-origin:200px 200px}
 body.alert .reactor{filter:drop-shadow(0 0 30px rgba(255,180,84,.45))}
 body.alert .reactor circle,body.alert .reactor line{stroke:var(--amber)}
 body.alert .coreGlow{animation:pulse 1.1s ease-in-out infinite}
@@ -1649,19 +1713,19 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
 .right{grid-area:right;display:flex;flex-direction:column;justify-content:center;gap:12px}
 .bar .label{display:flex;justify-content:space-between;margin-bottom:3px}
 .bar .label span:last-child{color:var(--cy2)}
-.track{height:7px;background:rgba(255,162,87,.10);border-radius:2px;overflow:hidden}
-.fill{height:100%;background:linear-gradient(90deg,rgba(255,162,87,.35),var(--cy));
-  box-shadow:0 0 10px rgba(255,162,87,.6);width:0;transition:width .9s ease}
+.track{height:7px;background:rgba(165,180,252,.10);border-radius:2px;overflow:hidden}
+.fill{height:100%;background:linear-gradient(90deg,rgba(165,180,252,.35),var(--cy));
+  box-shadow:0 0 10px rgba(165,180,252,.6);width:0;transition:width .9s ease}
 
 /* ---- mission log ---- */
-.feed{grid-area:feed;border-top:1px solid rgba(255,162,87,.22);padding-top:10px;
+.feed{grid-area:feed;border-top:1px solid rgba(165,180,252,.22);padding-top:10px;
   overflow:hidden}
 .feed .label{margin-bottom:8px}
 #feedlines{overflow:hidden;font-size:12.5px}
 #feedlines div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  padding:1.5px 0;color:#e6c4a8}
+  padding:1.5px 0;color:#c2bce8}
 #feedlines div.fresh{animation:landed 1.6s ease-out}
-@keyframes landed{0%{background:rgba(255,162,87,.22);transform:translateX(-6px)}
+@keyframes landed{0%{background:rgba(165,180,252,.22);transform:translateX(-6px)}
   100%{background:transparent;transform:none}}
 #feedlines .t{color:var(--dim)}
 #feedlines .k{color:var(--cy2)}
@@ -1671,35 +1735,35 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
 /* ---- ask console ---- */
 #askbar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;
   align-items:center;gap:12px;padding:11px 22px;
-  background:rgba(8,5,3,.985);backdrop-filter:blur(7px);
-  border-top:1px solid rgba(255,162,87,.3)}
+  background:rgba(7,5,15,.985);backdrop-filter:blur(7px);
+  border-top:1px solid rgba(165,180,252,.3)}
 #askbar .caret{color:var(--cy);font-size:13px;letter-spacing:.2em;flex:0 0 auto}
 #askbar input{flex:1;min-width:0;background:transparent;border:0;outline:0;
   color:var(--ink);font:inherit;font-size:14px;letter-spacing:.04em}
 #askbar input::placeholder{color:var(--dim);letter-spacing:.14em}
 #askbar .hint{color:var(--dim);font-size:10px;letter-spacing:.18em;flex:0 0 auto}
-body.alert #askbar{border-top-color:rgba(255,95,67,.45)}
+body.alert #askbar{border-top-color:rgba(255,94,138,.45)}
 
 /* Starts below the top bar so the clock and the way out stay reachable while
    the console is open. Near-opaque — the HUD behind it must not compete with
    the text. */
 #console{position:fixed;left:0;right:0;bottom:0;top:64px;z-index:14;
   display:none;flex-direction:column;padding:14px 22px 60px;
-  background:rgba(8,5,3,.985);backdrop-filter:blur(7px);
-  border-top:1px solid rgba(255,162,87,.16)}
+  background:rgba(7,5,15,.985);backdrop-filter:blur(7px);
+  border-top:1px solid rgba(165,180,252,.16)}
 #console.on{display:flex}
 #console .chead{display:flex;align-items:center;gap:12px;flex:0 0 auto;
-  border-bottom:1px solid rgba(255,162,87,.22);padding-bottom:9px;margin-bottom:12px}
+  border-bottom:1px solid rgba(165,180,252,.22);padding-bottom:9px;margin-bottom:12px}
 #console .chead b{color:var(--cy2);font-size:12px;letter-spacing:.28em;font-weight:600}
 #console .x{margin-left:auto;color:var(--dim);cursor:pointer;font-size:11px;
-  letter-spacing:.18em;border:1px solid rgba(255,162,87,.3);border-radius:5px;
+  letter-spacing:.18em;border:1px solid rgba(165,180,252,.3);border-radius:5px;
   padding:5px 11px;background:transparent;font-family:inherit}
 #console .x:hover{color:var(--cy);border-color:var(--cy)}
 #lines{flex:1;overflow-y:auto;font-size:13.5px;line-height:1.62;padding-right:6px}
 #lines .turn{margin-bottom:15px;max-width:900px}
 #lines .who{font-size:10px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
 #lines .you .who{color:var(--cy)}
-#lines .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#f2ddc9}
+#lines .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#ded9f5}
 #lines .you .body{color:var(--cy2)}
 #lines .bad .body{color:var(--red)}
 #lines .body::after{content:"";display:inline-block;width:7px;height:14px;
@@ -1707,7 +1771,7 @@ body.alert #askbar{border-top-color:rgba(255,95,67,.45)}
 #lines .typing .body::after{opacity:1;animation:blink 1s step-end infinite}
 
 /* ---- boot sequence ---- */
-#boot{position:fixed;inset:0;z-index:20;background:#0a0604;padding:9vh 8vw;
+#boot{position:fixed;inset:0;z-index:20;background:#07050f;padding:9vh 8vw;
   font-size:13px;color:var(--cy);letter-spacing:.06em}
 #boot div{opacity:0;animation:bootline .25s forwards}
 @keyframes bootline{to{opacity:1}}
@@ -1767,29 +1831,36 @@ body.alert #askbar{border-top-color:rgba(255,95,67,.45)}
     <svg class="reactor" viewBox="0 0 400 400" aria-hidden="true">
       <defs>
         <radialGradient id="cg" cx="50%" cy="50%">
-          <stop offset="0%" stop-color="#fff6ec" stop-opacity="1"/>
-          <stop offset="34%" stop-color="#ffd0a0" stop-opacity=".95"/>
-          <stop offset="70%" stop-color="#d9772f" stop-opacity=".55"/>
-          <stop offset="100%" stop-color="#6b3410" stop-opacity="0"/>
+          <stop offset="0%" stop-color="#f4f2ff" stop-opacity="1"/>
+          <stop offset="34%" stop-color="#dbd9ff" stop-opacity=".95"/>
+          <stop offset="70%" stop-color="#7c6ad8" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="#2a1f5c" stop-opacity="0"/>
         </radialGradient>
         <linearGradient id="sw" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="#ffa257" stop-opacity="0"/>
-          <stop offset="100%" stop-color="#ffa257" stop-opacity=".55"/>
+          <stop offset="0%" stop-color="#a5b4fc" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#a5b4fc" stop-opacity=".55"/>
         </linearGradient>
       </defs>
-      <circle class="rSeg"  cx="200" cy="200" r="186"/>
-      <circle class="rThin" cx="200" cy="200" r="168"/>
+      <circle class="rSeg"  cx="200" cy="200" r="190"/>
+      <circle class="rThin" cx="200" cy="200" r="176"/>
       <g class="ticks" id="ticks"></g>
-      <circle class="rSeg2" cx="200" cy="200" r="150"/>
-      <g id="sweep"><path d="M200 200 L200 54 A146 146 0 0 1 303 97 Z"
+      <!-- the gauge: one arc per pipeline stage, lit by how many are in it -->
+      <g id="gaugeTrack"></g>
+      <g id="gauge"></g>
+      <circle class="rThin" cx="200" cy="200" r="146"/>
+      <circle class="rSeg2" cx="200" cy="200" r="136"/>
+      <g id="sweep"><path d="M200 200 L200 68 A132 132 0 0 1 293 107 Z"
         fill="url(#sw)" stroke="none"/></g>
       <g class="spokes" id="spokes"></g>
-      <circle class="rThin" cx="200" cy="200" r="104"/>
-      <circle class="rSeg3" cx="200" cy="200" r="82"/>
-      <circle class="coreGlow" cx="200" cy="200" r="52" fill="url(#cg)" stroke="none"/>
+      <g id="orbit"></g>
+      <circle class="rThin" cx="200" cy="200" r="100"/>
+      <circle class="rSeg3" cx="200" cy="200" r="80"/>
+      <circle class="rIris" cx="200" cy="200" r="62"/>
+      <circle class="coreGlow" cx="200" cy="200" r="50" fill="url(#cg)" stroke="none"/>
+      <circle class="coreRing" cx="200" cy="200" r="34"/>
     </svg>
     <div class="coreLabel">
-      <div class="label">Solo Studio pipeline core</div>
+      <div class="label">Outer ring · your pipeline by stage</div>
       <b class="glow" id="coreState">SYSTEMS NOMINAL</b>
     </div>
   </div>
@@ -1826,6 +1897,64 @@ body.alert #askbar{border-top-color:rgba(255,95,67,.45)}
     l.setAttribute('x2', 200 + 146 * Math.cos(a)); l.setAttribute('y2', 200 + 146 * Math.sin(a));
     spokes.appendChild(l);
   }
+  /* The gauge: eight arcs round the core, one per stage of the pipeline, in
+     the order work moves through it. Each fills with how many leads are
+     sitting there — so the ring is a readout, not decoration. */
+  var STAGES = [
+    { key: 'found',             c: '#f9a8d4' },
+    { key: 'contacted',         c: '#a5b4fc' },
+    { key: 'building_preview',  c: '#d8b4fe' },
+    { key: 'preview_sent',      c: '#fde68a' },
+    { key: 'sending_payment_link', c: '#d8b4fe' },
+    { key: 'payment_link_sent', c: '#8fe6f5' },
+    { key: 'paid',              c: '#8ff0cb' },
+    { key: 'delivered',         c: '#6ee7b7' }
+  ];
+  var GR = 160, GAP = 3.2, SEG = 360 / STAGES.length;
+
+  function arcPath(from, to) {
+    var a = (from - 90) * Math.PI / 180, b = (to - 90) * Math.PI / 180;
+    return 'M ' + (200 + GR * Math.cos(a)).toFixed(2) + ' '
+                + (200 + GR * Math.sin(a)).toFixed(2)
+         + ' A ' + GR + ' ' + GR + ' 0 ' + (to - from > 180 ? 1 : 0) + ' 1 '
+                + (200 + GR * Math.cos(b)).toFixed(2) + ' '
+                + (200 + GR * Math.sin(b)).toFixed(2);
+  }
+  var gTrack = document.getElementById('gaugeTrack'),
+      gLive = document.getElementById('gauge'), gPaths = [];
+  STAGES.forEach(function (st, i) {
+    var d = arcPath(i * SEG + GAP, (i + 1) * SEG - GAP),
+        len = GR * (SEG - GAP * 2) * Math.PI / 180;
+    var bg = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    bg.setAttribute('d', d); gTrack.appendChild(bg);
+    var fg = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    fg.setAttribute('d', d);
+    fg.setAttribute('stroke', st.c);
+    fg.style.color = st.c;                 /* for the drop-shadow */
+    fg.style.strokeDasharray = len.toFixed(2);
+    fg.style.strokeDashoffset = len.toFixed(2);
+    var tip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    fg.appendChild(tip);
+    gLive.appendChild(fg);
+    gPaths.push({ el: fg, len: len, tip: tip,
+                  label: st.key.replace(/_/g, ' ') });
+  });
+
+  /* one mote orbiting for each deal actually in flight */
+  var orbit = document.getElementById('orbit');
+  function setOrbit(n) {
+    n = Math.max(0, Math.min(14, n));
+    while (orbit.childNodes.length > n) orbit.removeChild(orbit.lastChild);
+    while (orbit.childNodes.length < n) {
+      var i = orbit.childNodes.length, a = (i / 14) * Math.PI * 2;
+      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', (200 + 176 * Math.cos(a)).toFixed(1));
+      c.setAttribute('cy', (200 + 176 * Math.sin(a)).toFixed(1));
+      c.setAttribute('r', 2.6);
+      orbit.appendChild(c);
+    }
+  }
+
   var ticks = document.getElementById('ticks');
   for (var t = 0; t < 60; t++) {
     var ta = t * Math.PI / 30, len = (t % 5 === 0) ? 12 : 6;
@@ -1912,6 +2041,21 @@ body.alert #askbar{border-top-color:rgba(255,95,67,.45)}
     ap.className = 'chip ' + (d.autopilot ? 'on' : 'off');
 
     document.body.classList.toggle('alert', d.attention > 0);
+
+    /* Drive the gauge: each arc fills against the busiest stage, so the ring
+       shows the shape of the pipeline rather than raw totals. */
+    var peak = 1;
+    STAGES.forEach(function (st) { peak = Math.max(peak, d.stages[st.key] || 0); });
+    STAGES.forEach(function (st, i) {
+      var n = d.stages[st.key] || 0, g = gPaths[i];
+      g.el.style.strokeDashoffset = (g.len * (1 - n / peak)).toFixed(2);
+      g.el.style.opacity = n ? 1 : 0.22;
+      g.el.classList.toggle('lit', n > 0);
+      g.tip.textContent = g.label + ' — ' + n;
+    });
+    setOrbit((d.kpis && d.stages) ? (d.stages.contacted || 0)
+      + (d.stages.preview_sent || 0) + (d.stages.payment_link_sent || 0)
+      + (d.stages.paid || 0) : 0);
 
     var money = document.getElementById('money');
     if (money.children.length !== d.money.length) money.textContent = '';
@@ -2152,7 +2296,7 @@ def manifest():
     return {
         "name": "Solo Studio", "short_name": "Solo Studio",
         "start_url": "/", "display": "standalone",
-        "background_color": "#100d0b", "theme_color": "#100d0b",
+        "background_color": "#0b0912", "theme_color": "#0b0912",
         "icons": [
             {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
@@ -2177,15 +2321,15 @@ PIN_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Solo Studio</title>{{ pwa_meta|safe }}
-<style>body{background:#100d0b;color:#f5ece6;font:16px -apple-system,sans-serif;
+<style>body{background:#0b0912;color:#f0ecf7;font:16px -apple-system,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 form{text-align:center;padding:24px}
-h1{font-size:20px;letter-spacing:.3em;color:#ffd0a0;font-weight:600}
+h1{font-size:20px;letter-spacing:.3em;color:#dbd9ff;font-weight:600}
 input{font-size:28px;text-align:center;letter-spacing:.4em;width:220px;padding:12px;
-border-radius:10px;border:1px solid #5c3a24;background:#1f1814;color:#f5ece6;margin:18px 0}
+border-radius:10px;border:1px solid #3d3468;background:#1a1533;color:#f0ecf7;margin:18px 0}
 button{font-size:16px;font-weight:600;padding:12px 40px;border-radius:10px;border:0;
-background:#ff8a5b;color:#22100a}
-.err{color:#ff9f9f;min-height:1.4em}</style></head>
+background:#f472b6;color:#26071a}
+.err{color:#ffab94;min-height:1.4em}</style></head>
 <body><form method="post">
 <h1>SOLO STUDIO</h1>
 <div class="err">{{ error or "" }}</div>
@@ -2214,15 +2358,15 @@ LOGIN_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Solo Studio</title>{{ pwa_meta|safe }}
-<style>body{background:#100d0b;color:#f5ece6;font:16px -apple-system,sans-serif;
+<style>body{background:#0b0912;color:#f0ecf7;font:16px -apple-system,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 form{text-align:center;padding:24px;width:100%;max-width:340px}
-h1{font-size:20px;letter-spacing:.3em;color:#ffd0a0;font-weight:600}
+h1{font-size:20px;letter-spacing:.3em;color:#dbd9ff;font-weight:600}
 input{font-size:18px;width:100%;padding:14px;border-radius:10px;
-border:1px solid #5c3a24;background:#1f1814;color:#f5ece6;margin:18px 0}
+border:1px solid #3d3468;background:#1a1533;color:#f0ecf7;margin:18px 0}
 button{font-size:16px;font-weight:600;padding:14px 40px;border-radius:10px;
-border:0;background:#ff8a5b;color:#22100a;width:100%}
-.err{color:#ff9f9f;min-height:1.4em;font-size:14px}</style></head>
+border:0;background:#f472b6;color:#26071a;width:100%}
+.err{color:#ffab94;min-height:1.4em;font-size:14px}</style></head>
 <body><form method="post">
 <h1>SOLO STUDIO</h1>
 <div class="err">{{ error or "" }}</div>
@@ -2591,11 +2735,16 @@ def _house_state() -> dict:
     def at(*stages):
         return sum(1 for l in leads if l["stage"] in stages)
 
+    def who(*stages, rows=None):
+        src = rows if rows is not None else [l for l in leads
+                                             if l["stage"] in stages]
+        return [l["name"] for l in src[:8]]
+
     waiting = len(db.leads_awaiting_approval())
     needs_email = len(db.leads_needing_email())
 
-    def room(key, ready, on, count, missing=""):
-        return {"key": key, "count": count,
+    def room(key, ready, on, count, missing="", names=()):
+        return {"key": key, "count": count, "names": list(names),
                 "state": "nokey" if not ready else ("on" if on else "standby"),
                 "note": missing if not ready else ""}
 
@@ -2603,24 +2752,28 @@ def _house_state() -> dict:
     rooms = [
         room("scout", bool(cfg.get("google_places_api_key")),
              bool(cfg.get("auto_search_enabled")), len(leads),
-             "Needs your Google Places key"),
+             "Needs your Google Places key", who(rows=leads)),
         room("researcher", anth, bool(cfg.get("auto_research_enabled")),
-             needs_email, "Needs your Anthropic key"),
+             needs_email, "Needs your Anthropic key",
+             who(rows=db.leads_needing_email())),
         room("copywriter", bool(cfg.get("inkbox_api_key")), True, waiting,
-             "Needs your Inkbox key"),
+             "Needs your Inkbox key", who(rows=db.leads_awaiting_approval())),
         room("triage", anth, auto, at(core.STAGE_CONTACTED),
-             "Needs your Anthropic key"),
+             "Needs your Anthropic key", who(core.STAGE_CONTACTED)),
         room("designer", anth, auto, at(core.STAGE_BUILDING_PREVIEW),
-             "Needs your Anthropic key"),
+             "Needs your Anthropic key", who(core.STAGE_BUILDING_PREVIEW)),
         room("deployer", bool(cfg.get("netlify_api_key")), auto,
-             at(core.STAGE_PREVIEW_SENT), "Needs your Netlify token"),
+             at(core.STAGE_PREVIEW_SENT), "Needs your Netlify token",
+             who(core.STAGE_PREVIEW_SENT)),
         room("biller", bool(cfg.get("stripe_secret_key")), auto,
              at(core.STAGE_SENDING_PAYMENT_LINK, core.STAGE_PAYMENT_LINK_SENT),
-             "Needs your Stripe key"),
+             "Needs your Stripe key",
+             who(core.STAGE_SENDING_PAYMENT_LINK, core.STAGE_PAYMENT_LINK_SENT)),
         room("delivery", bool(cfg.get("netlify_api_key")) and
              bool(cfg.get("stripe_secret_key")), auto,
              at(core.STAGE_PAID, core.STAGE_DEPLOYING_FINAL),
-             "Needs your Netlify and Stripe keys"),
+             "Needs your Netlify and Stripe keys",
+             who(core.STAGE_PAID, core.STAGE_DEPLOYING_FINAL)),
     ]
 
     latest = db.recent_events(1)
@@ -2653,10 +2806,10 @@ def _team_roster():
 
     def state(ready: bool, on: bool = True, missing: str = ""):
         if not ready:
-            return "NEEDS KEY", "rgba(255,107,107,.16)", "#ff9f9f", missing
+            return "NEEDS KEY", "rgba(255,122,94,.16)", "#ffab94", missing
         if not on:
-            return "STANDBY", "rgba(255,186,142,.08)", "#a3907f", ""
-        return "ON DUTY", "rgba(143,217,138,.16)", "#a8e5a3", ""
+            return "STANDBY", "rgba(190,170,255,.08)", "#9689ab", ""
+        return "ON DUTY", "rgba(110,231,183,.16)", "#8ff0cb", ""
 
     auto = bool(cfg.get("autopilot_enabled"))
     members = [
@@ -2753,10 +2906,10 @@ def _team_roster():
 
 
 ROOM_TINT = {
-    "scout": "rgba(255,138,91,.5)",      "researcher": "rgba(125,190,230,.42)",
-    "copywriter": "rgba(190,150,240,.42)", "triage": "rgba(242,196,107,.45)",
-    "designer": "rgba(244,114,182,.4)",  "deployer": "rgba(110,205,195,.42)",
-    "biller": "rgba(143,217,138,.42)",   "delivery": "rgba(255,168,96,.45)",
+    "scout": "rgba(244,114,182,.48)",    "researcher": "rgba(129,140,248,.45)",
+    "copywriter": "rgba(192,132,252,.45)", "triage": "rgba(252,211,77,.42)",
+    "designer": "rgba(232,121,249,.42)", "deployer": "rgba(103,232,249,.40)",
+    "biller": "rgba(110,231,183,.42)",   "delivery": "rgba(167,139,250,.45)",
 }
 
 
@@ -2900,9 +3053,9 @@ RESTARTING_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Restarting…</title>{{ pwa_meta|safe }}
-<style>body{background:#100d0b;color:#f5ece6;font:16px -apple-system,sans-serif;
+<style>body{background:#0b0912;color:#f0ecf7;font:16px -apple-system,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;
-text-align:center}h1{font-size:19px;letter-spacing:.2em;color:#ffd0a0}
+text-align:center}h1{font-size:19px;letter-spacing:.2em;color:#dbd9ff}
 .dot{animation:b 1.2s infinite}@keyframes b{50%{opacity:.25}}</style></head>
 <body><div><h1>RESTARTING<span class="dot">…</span></h1>
 <p class="muted">This page comes back on its own.</p></div>

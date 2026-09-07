@@ -2,7 +2,7 @@
 
 An automated lead-gen + sales pipeline for a one-person web design studio.
 
-Dark by design — warm charcoal, firelight accents, soft glass panels and
+Dark by design — indigo ground, hot pink accent, soft glass panels and
 rounded corners. Ribbons of light drift behind the
 whole app: they lean as you move the pointer (or tilt your phone), brighten as
 the pipeline gets busier, and flare for a moment whenever a reply or a payment
@@ -233,8 +233,9 @@ approve; Triage, Designer and Deployer below that; Biller and Delivery on the
 ground floor; and the vault at the bottom with what you've collected.
 
 It's live. Rooms with a missing key sit dark and say which key. Rooms on duty
-breathe. And when a deal actually moves — a reply lands, a payment clears — you
-see the light travel from one room to the next.
+breathe. **Tap any room** to see exactly which businesses are in it. And when a
+deal actually moves — a reply lands, a payment clears — you see the light
+travel from one room to the next.
 
 ### The team
 

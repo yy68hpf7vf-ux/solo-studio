@@ -119,6 +119,23 @@ class HouseTest(unittest.TestCase):
         self.assertEqual(v["collected"], 500)
         self.assertEqual(v["delivered"], 1)
 
+    def test_a_room_names_who_is_standing_in_it(self):
+        self.add("Rivera Plumbing", self.core.STAGE_PREVIEW_SENT)
+        self.add("Casa Bonita", self.core.STAGE_PREVIEW_SENT)
+        names = self.rooms()["deployer"]["names"]
+        self.assertCountEqual(names, ["Rivera Plumbing", "Casa Bonita"])
+
+    def test_room_names_stay_bounded(self):
+        """A room holding fifty leads must not ship fifty names every poll."""
+        for i in range(30):
+            self.add("Business %d" % i, self.core.STAGE_PREVIEW_SENT)
+        room = self.rooms()["deployer"]
+        self.assertEqual(room["count"], 30)
+        self.assertLessEqual(len(room["names"]), 8)
+
+    def test_an_empty_room_names_nobody(self):
+        self.assertEqual(self.rooms()["designer"]["names"], [])
+
     def test_house_is_behind_the_gate(self):
         cfg = self.core.load_config()
         cfg.update(phone_access_enabled=True, phone_pin="2468")

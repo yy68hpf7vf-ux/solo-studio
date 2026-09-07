@@ -143,6 +143,17 @@ class PhoneGateTest(unittest.TestCase):
         self.assertEqual(m["theme_color"], self._theme_bg())
         self.assertEqual(m["background_color"], self._theme_bg())
 
+    def test_jarvis_reactor_reads_the_pipeline(self):
+        """The outer ring is a gauge of real stages, not decoration."""
+        html = self.client.get(
+            "/jarvis", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        self.assertIn('id="gauge"', html)
+        self.assertIn('id="gaugeTrack"', html)
+        for stage in ("found", "contacted", "preview_sent",
+                      "payment_link_sent", "paid", "delivered"):
+            self.assertIn("'" + stage + "'", html)
+        self.assertIn("your pipeline by stage", html)
+
     # -- getting it onto a phone ---------------------------------------------
 
     def test_setup_never_nests_a_form(self):
