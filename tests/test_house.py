@@ -136,6 +136,33 @@ class HouseTest(unittest.TestCase):
     def test_an_empty_room_names_nobody(self):
         self.assertEqual(self.rooms()["designer"]["names"], [])
 
+    # -- the label that confused the first real run --------------------------
+
+    def test_a_keyed_agent_with_nothing_to_do_says_waiting(self):
+        """It used to say ON DUTY with an empty queue, which reads as "busy"
+        and made a correctly-idle app look broken."""
+        cfg = self.core.load_config()
+        cfg.update(anthropic_api_key="sk-ant-x", autopilot_enabled=True)
+        self.core.save_config(cfg)
+        self.dash.STATE.reload()
+        roster = {m["name"]: m for m in self.dash._team_roster()}
+        self.assertEqual(roster["Triage"]["status"], "WAITING")
+
+    def test_an_agent_with_work_says_working(self):
+        cfg = self.core.load_config()
+        cfg.update(anthropic_api_key="sk-ant-x", autopilot_enabled=True)
+        self.core.save_config(cfg)
+        self.dash.STATE.reload()
+        lid = self.add("Rivera Plumbing", self.core.STAGE_FOUND)
+        self.dash.STATE.db.claim(lid, [self.core.STAGE_FOUND],
+                                 self.core.STAGE_CONTACTED)
+        roster = {m["name"]: m for m in self.dash._team_roster()}
+        self.assertEqual(roster["Triage"]["status"], "WORKING")
+
+    def test_a_missing_key_still_beats_everything(self):
+        roster = {m["name"]: m for m in self.dash._team_roster()}
+        self.assertEqual(roster["Biller"]["status"], "NEEDS KEY")
+
     def test_house_is_behind_the_gate(self):
         cfg = self.core.load_config()
         cfg.update(phone_access_enabled=True, phone_pin="2468")

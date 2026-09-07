@@ -2794,6 +2794,10 @@ TEAM_PAGE = """
 <p class="muted" style="margin-top:-6px">Eight specialists. Each owns one job and
 hands off to the next. Two of them ask you before acting — everything else runs
 on its own.</p>
+<p class="muted" style="margin:8px 0 0"><b>WAITING</b> means keyed up with
+nothing in front of it. That's normal, and it's what most of these look like
+until a lead reaches them — they only wake when there's something on their
+desk. <b>WORKING</b> means there is.</p>
 </div>
 
 {% for m in team %}
@@ -2920,12 +2924,17 @@ def _team_roster():
                 return (e["detail"] or "")[:110]
         return ""
 
-    def state(ready: bool, on: bool = True, missing: str = ""):
+    def state(ready: bool, on: bool = True, missing: str = "", queue: int = 0):
+        """queue is what's in front of this specialist right now. With a key
+        and nothing to do, the honest word is WAITING — ON DUTY reads like
+        it's mid-task, which is what made the first run look broken."""
         if not ready:
             return "NEEDS KEY", "rgba(255,122,94,.16)", "#ffab94", missing
         if not on:
             return "STANDBY", "rgba(190,170,255,.08)", "#9689ab", ""
-        return "ON DUTY", "rgba(110,231,183,.16)", "#8ff0cb", ""
+        if not queue:
+            return "WAITING", "rgba(129,140,248,.16)", "#a5b4fc", ""
+        return "WORKING", "rgba(110,231,183,.16)", "#8ff0cb", ""
 
     auto = bool(cfg.get("autopilot_enabled"))
     members = [
@@ -2938,7 +2947,8 @@ def _team_roster():
              last=last_detail("find_leads", "auto_search"),
              st=state(bool(cfg.get("google_places_api_key")),
                       bool(cfg.get("auto_search_enabled")),
-                      "Add your Google Places key in Setup")),
+                      "Add your Google Places key in Setup",
+                      queue=1 if cfg.get("saved_searches", "").strip() else 0)),
         dict(icon="🕵️", name="Researcher", color="#0ea5e9",
              job="Searches the web for the contact email of businesses that "
                  "don't have one — Facebook, Yelp, directories.",
@@ -2950,7 +2960,8 @@ def _team_roster():
              gate="Suggests only — you accept each address",
              st=state(bool(cfg.get("anthropic_api_key")),
                       bool(cfg.get("auto_research_enabled")),
-                      "Add your Anthropic key in Setup")),
+                      "Add your Anthropic key in Setup",
+                      queue=len(db.leads_needing_email()))),
         dict(icon="✍️", name="Copywriter", color="#8b5cf6",
              job="Writes each cold email from your template, personalised with "
                  "the business name and your details.",
@@ -2961,7 +2972,8 @@ def _team_roster():
              last=last_detail("outreach_sent"),
              gate="Never sends without your approval",
              st=state(bool(cfg.get("inkbox_api_key")), True,
-                      "Add your Inkbox key in Setup")),
+                      "Add your Inkbox key in Setup",
+                      queue=len(db.leads_awaiting_approval()))),
         dict(icon="📬", name="Triage", color="#f59e0b",
              job="Reads every reply and works out whether they're interested, "
                  "not interested, or asking a question.",
@@ -2971,7 +2983,8 @@ def _team_roster():
                     ("Opted out", ev.get("unsubscribed", 0))],
              last=last_detail("reply_received"),
              st=state(bool(cfg.get("anthropic_api_key")), auto,
-                      "Add your Anthropic key in Setup")),
+                      "Add your Anthropic key in Setup",
+                      queue=stages.get(core.STAGE_CONTACTED, 0))),
         dict(icon="🎨", name="Designer", color="#ec4899",
              job="Designs a complete one-page website for the business, "
                  "matched to what they do.",
@@ -2979,7 +2992,8 @@ def _team_roster():
              stats=[("Sites designed", ev.get("site_generated", 0))],
              last=last_detail("site_generated"),
              st=state(bool(cfg.get("anthropic_api_key")), auto,
-                      "Add your Anthropic key in Setup")),
+                      "Add your Anthropic key in Setup",
+                      queue=stages.get(core.STAGE_BUILDING_PREVIEW, 0))),
         dict(icon="🚀", name="Deployer", color="#14b8a6",
              job="Publishes the watermarked preview to the web and emails the "
                  "link to the lead.",
@@ -2988,7 +3002,8 @@ def _team_roster():
                     ("Links emailed", ev.get("preview_emailed", 0))],
              last=last_detail("preview_deployed"),
              st=state(bool(cfg.get("netlify_api_key")), auto,
-                      "Add your Netlify token in Setup")),
+                      "Add your Netlify token in Setup",
+                      queue=stages.get(core.STAGE_PREVIEW_SENT, 0))),
         dict(icon="💳", name="Biller", color="#22c55e",
              job="Creates the payment link, emails it, and watches Stripe "
                  "around the clock until the money clears.",
@@ -2999,7 +3014,8 @@ def _team_roster():
                      stages.get(core.STAGE_PAYMENT_LINK_SENT, 0))],
              last=last_detail("payment_confirmed", "payment_link_emailed"),
              st=state(bool(cfg.get("stripe_secret_key")), auto,
-                      "Add your Stripe key in Setup")),
+                      "Add your Stripe key in Setup",
+                      queue=stages.get(core.STAGE_PAYMENT_LINK_SENT, 0))),
         dict(icon="📦", name="Delivery", color="#0284c7",
              job="Once Stripe confirms payment, strips the watermark, puts the "
                  "real site live, and emails the customer.",
@@ -3010,7 +3026,8 @@ def _team_roster():
              gate="Blocked until Stripe confirms payment",
              st=state(bool(cfg.get("netlify_api_key")
                            and cfg.get("stripe_secret_key")), auto,
-                      "Add your Netlify and Stripe keys in Setup")),
+                      "Add your Netlify and Stripe keys in Setup",
+                      queue=stages.get(core.STAGE_PAID, 0))),
     ]
     for m in members:
         status, bg, fg, missing = m.pop("st")
