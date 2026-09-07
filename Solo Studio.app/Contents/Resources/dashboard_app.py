@@ -60,6 +60,11 @@ CLOUD_MODE = bool(CLOUD_PASSWORD)
 # on disk so we can tell the user a restart is needed.
 RUNNING_SHA = core.installed_version().get("sha", "")
 MIN_CLOUD_PASSWORD = 10
+# Google Places Text Search: ~$32 per 1,000 calls, first 5,000 a month free,
+# and one search pages up to three times.
+PAGES_PER_SEARCH = 3
+FREE_CALLS_MONTH = 5000
+DOLLARS_PER_1K = 32
 
 
 def _secret_key() -> bytes:
@@ -1021,7 +1026,37 @@ postal address on commercial email.</p>
 </div>
 </div>
 <h2 style="margin-top:18px">Automatic lead hunting</h2>
-<div class="grid">
+
+<div class="note info">
+  <div class="k">Let it build the list for you</div>
+  <p class="muted" style="margin:6px 0 10px">Say where you work and how far
+  you'd travel. It looks up the real towns around you and writes a search for
+  every trade in every town — you don't have to know the map.</p>
+  <div class="grid" style="gap:0 18px">
+    <div>
+      <label>Your town</label>
+      <input type="text" name="territory_base" form="build-searches"
+        value="{{ config.territory_base }}" placeholder="Napanoch, NY">
+    </div>
+    <div>
+      <label>How far you'd travel (miles)</label>
+      <input type="number" name="territory_miles" form="build-searches"
+        min="5" max="120" value="{{ config.territory_miles or 30 }}">
+    </div>
+  </div>
+  <label>Trades to look for (one per line)</label>
+  <textarea name="trades" form="build-searches" style="min-height:88px"
+    >{{ trades_text }}</textarea>
+  <p class="muted" style="margin:6px 0 0">These are trades where a lot of
+  businesses still have no website. Restaurants and salons are left out on
+  purpose — nearly all of them have one, so searching for them costs money to
+  find nobody.</p>
+  <button class="btn btn-primary" form="build-searches"
+    style="margin-top:12px">Build my search list</button>
+  <span class="muted" style="margin-left:10px">Replaces the list below.</span>
+</div>
+
+<div class="grid" style="margin-top:16px">
 <div>
 <label><input type="checkbox" name="auto_search_enabled" value="1"
   {% if config.auto_search_enabled %}checked{% endif %}
@@ -1036,6 +1071,21 @@ postal address on commercial email.</p>
   style="width:auto;margin-right:8px">Let the Researcher hunt missing emails</label>
 <p class="muted">Uses Claude's web search to find each business's public contact
 address. It only ever suggests — you accept or reject each one.</p>
+<label>Searches per run</label>
+<input type="number" name="searches_per_run" min="1" max="60"
+  value="{{ config.searches_per_run or 10 }}">
+<div class="note {{ 'warn' if cost.over else 'info' }}" style="margin-top:8px">
+  <div class="k">What Google will charge you</div>
+  <p class="muted" style="margin:5px 0 0">{{ cost.searches }} searches saved,
+  {{ cost.per_run }} per run, every {{ cost.hours }}h — about
+  <b>{{ cost.calls_month }} Google calls a month</b>.
+  {% if cost.over %}That's over the 5,000 free ones; the overage runs roughly
+  <b>${{ cost.dollars }}/month</b>. Lower "searches per run" or search less
+  often.{% else %}The free allowance is 5,000 a month, so this costs you
+  nothing. It works round the whole list over
+  {{ cost.days_for_full_sweep }} day{{ '' if cost.days_for_full_sweep == 1
+  else 's' }}.{% endif %}</p>
+</div>
 <label>Max cold emails per day</label>
 <input type="number" name="daily_send_cap" min="1" max="200"
   value="{{ config.daily_send_cap }}">
@@ -1150,6 +1200,8 @@ Lower is not better — it just uses more of your API allowance.</p>
 <form id="phone-restart" method="post" action="{{ url_for('do_restart') }}">
   <input type="hidden" name="back" value="{{ url_for('setup') }}">
 </form>
+<form id="build-searches" method="post"
+      action="{{ url_for('build_searches') }}"></form>
 </div>
 {% endblock %}
 """
@@ -3610,6 +3662,7 @@ def setup():
         if "saved_searches" in request.form:
             cfg["saved_searches"] = request.form.get("saved_searches", "")
         for field, lo, hi in (("search_interval_hours", 1, 168),
+                              ("searches_per_run", 1, 60),
                               ("daily_send_cap", 1, 200)):
             try:
                 cfg[field] = max(lo, min(hi, int(request.form.get(field, ""))))
@@ -3629,12 +3682,77 @@ def setup():
     ip = lan_ip()
     target = request.url_root if CLOUD_MODE else f"http://{ip}:{PORT}/"
     have = sum(1 for k in KEY_FIELDS if STATE.config.get(k["field"]))
+    trades_text = "\n".join(core.DEFAULT_TRADES)
     price = core.fmt_price(STATE.config.get("site_price_usd", 500))
     return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=ip,
                    phone_listening=(CLOUD_MODE or BOUND_HOST == "0.0.0.0"),
                    keys_have=have, keys_missing=len(KEY_FIELDS) - have,
+                   trades_text=trades_text, cost=_search_cost(STATE.config),
                    price_value=price,
                    phone_qr=qr_svg(target))
+
+
+def _search_cost(cfg) -> dict:
+    """What the saved searches will actually cost per month.
+
+    Google bills Text Search per call at roughly $32/1,000 with the first
+    5,000 a month free, and each search pages up to three times. Showing this
+    is the difference between a helpful feature and a surprise bill.
+    """
+    queries = len([q for q in (cfg.get("saved_searches") or "").splitlines()
+                   if q.strip()])
+    per_run = max(1, int(cfg.get("searches_per_run", 10) or 10))
+    hours = max(1, int(cfg.get("search_interval_hours", 12) or 12))
+    per_run = min(per_run, queries) if queries else 0
+    runs_month = (24 / hours) * 30.4
+    calls = int(per_run * PAGES_PER_SEARCH * runs_month)
+    over = max(0, calls - FREE_CALLS_MONTH)
+    return {
+        "searches": queries, "per_run": per_run, "hours": hours,
+        "calls_month": calls, "over": over > 0,
+        "dollars": f"{over / 1000 * DOLLARS_PER_1K:.0f}",
+        "days_for_full_sweep": max(
+            1, round(queries / per_run * hours / 24)) if per_run else 1,
+    }
+
+
+@app.post("/action/build_searches")
+def build_searches():
+    """Turn 'my town + how far I'd drive' into the actual list of searches."""
+    base = (request.form.get("territory_base") or "").strip()
+    trades = [t.strip() for t in (request.form.get("trades") or "").splitlines()
+              if t.strip()]
+    try:
+        miles = max(5, min(120, int(request.form.get("territory_miles") or 30)))
+    except (TypeError, ValueError):
+        miles = 30
+    if not base:
+        flash("Put your town in first — something like \"Napanoch, NY\".", "err")
+        return redirect(url_for("setup"))
+    if not trades:
+        flash("Give it at least one trade to look for.", "err")
+        return redirect(url_for("setup"))
+    if not STATE.config.get("anthropic_api_key"):
+        flash("This uses your Anthropic key to look up the towns — add it "
+              "further up the page first.", "err")
+        return redirect(url_for("setup"))
+    try:
+        towns = STATE.services.towns_near(base, miles)
+    except Exception as e:
+        flash(f"Couldn't work out the towns: {str(e)[:200]}", "err")
+        return redirect(url_for("setup"))
+
+    lines = [f"{trade} in {town}" for town in towns for trade in trades]
+    cfg = core.load_config()
+    cfg.update(territory_base=base, territory_miles=miles,
+               saved_searches="\n".join(lines))
+    core.save_config(cfg)
+    STATE.reload()
+    STATE.db.set_kv("search_cursor", "0")
+    flash(f"Built {len(lines)} searches — {len(trades)} trades across "
+          f"{len(towns)} towns within {miles} miles of {base}. Check the cost "
+          "note before you switch automatic searching on.", "ok")
+    return redirect(url_for("setup"))
 
 
 @app.get("/setup/test_notification")

@@ -220,6 +220,18 @@ def line_for_today(today: date | None = None) -> dict:
     return {"text": text, "source": source}
 
 
+# Trades where a lot of businesses still have no website. Restaurants, salons
+# and gyms are deliberately absent — nearly all of them have one, so searching
+# for them burns Google calls to find nobody.
+DEFAULT_TRADES = [
+    "plumbers", "electricians", "landscapers", "tree service", "roofers",
+    "handyman", "house cleaning", "towing", "junk removal", "septic service",
+    "masonry", "excavation", "snow plowing", "small engine repair",
+    "auto repair", "barber shops", "moving companies", "pest control",
+    "HVAC", "fencing contractors",
+]
+
+
 def call_opener(lead: dict, cfg: dict) -> str:
     """A short thing to say when they answer. Plain, honest, and no API needed.
 
@@ -347,6 +359,9 @@ DEFAULT_CONFIG = {
     "research_per_tick": 3,           # how many leads to research each round
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
+    "searches_per_run": 10,       # Google bills per search — see cost note in Setup
+    "territory_base": "",         # e.g. "Napanoch, NY"
+    "territory_miles": 30,
     "daily_send_cap": 20,         # max approved cold emails sent per day
     # Phone access (dashboard reachable from your phone on the same Wi-Fi).
     "phone_access_enabled": False,
@@ -1054,6 +1069,54 @@ you do not know instead of inventing a lead, a figure, or a setting."""
                     "me something about your leads or setup.")
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         return text or "I didn't have anything to add there — try asking again."
+
+    def towns_near(self, base: str, miles: int) -> list[str]:
+        """Ask Claude for the real towns within `miles` of `base`.
+
+        This is the bit a person shouldn't have to do by hand — nobody knows
+        every hamlet in their county, and typing them one at a time is how the
+        automatic search ends up never being switched on.
+        """
+        client = self._get_anthropic()
+        model = self.config.get("anthropic_model") or "claude-opus-5"
+        prompt = (
+            f"List the towns, villages and hamlets within about {miles} miles "
+            f"of {base}.\n\n"
+            "Rules:\n"
+            "- Real inhabited places only, the kind that have local trades in "
+            "them. No neighbourhoods of one city, no townships that nobody "
+            "uses as an address.\n"
+            "- Include the starting place itself.\n"
+            "- Biggest and best-known first.\n"
+            "- At most 25.\n"
+            '- Format each as "Town, ST" on its own line. Nothing else — no '
+            "numbering, no commentary, no blank lines."
+        )
+        response = client.messages.create(
+            model=model, max_tokens=4000,
+            output_config={"effort": "low"},
+            tools=[{"type": "web_search_20260209", "name": "web_search",
+                    "max_uses": 4}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if response.stop_reason == "refusal":
+            raise ServiceError("Couldn't work that area out — try a nearby town.")
+        text = "".join(b.text for b in response.content if b.type == "text")
+        towns, seen = [], set()
+        for line in text.splitlines():
+            line = line.strip().lstrip("-•*0123456789. ").strip()
+            # a town line looks like "Ellenville, NY" and nothing more
+            if not re.fullmatch(r"[A-Za-z .'\-]{2,40},\s*[A-Za-z]{2,20}", line):
+                continue
+            key = line.lower()
+            if key not in seen:
+                seen.add(key)
+                towns.append(line)
+        if not towns:
+            raise ServiceError(
+                f"Couldn't find any towns near {base!r}. Check the spelling — "
+                'it wants something like "Napanoch, NY".')
+        return towns[:25]
 
     def research_email(self, lead: dict) -> dict:
         """Look up a business's public contact email using Claude's web search.
@@ -1846,8 +1909,24 @@ class Agent:
             except ValueError:
                 pass
         self.db.set_kv("last_auto_search", _now())
+
+        # Google bills per search, and the free allowance is 5,000 calls a
+        # month. So a run spends a fixed budget and picks up where it left off
+        # next time, working round the list instead of running all of it every
+        # time — a hundred saved searches on a 12-hour loop would otherwise be
+        # hundreds of dollars a month.
+        per_run = max(1, int(cfg.get("searches_per_run", 10) or 10))
+        try:
+            cursor = int(self.db.get_kv("search_cursor") or 0)
+        except (TypeError, ValueError):
+            cursor = 0
+        cursor %= len(queries)
+        batch = [queries[(cursor + i) % len(queries)]
+                 for i in range(min(per_run, len(queries)))]
+        self.db.set_kv("search_cursor", str((cursor + len(batch)) % len(queries)))
+
         added = 0
-        for query in queries:
+        for query in batch:
             try:
                 added += self.find_leads(query)["added"]
             except Exception as e:
@@ -1857,7 +1936,8 @@ class Agent:
             waiting = len(self.db.leads_awaiting_approval())
             need_email = len(self.db.leads_needing_email())
             self.db.log(None, "auto_search",
-                        f"Automatic search added {added} new leads "
+                        f"Searched {len(batch)} of {len(queries)} areas — "
+                        f"added {added} new leads "
                         f"({waiting} ready to approve, {need_email} need an "
                         "email address).")
             self._notify(f"{added} new leads found",

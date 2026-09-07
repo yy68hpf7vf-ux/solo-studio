@@ -284,10 +284,17 @@ Only Triage, Designer and Researcher use AI judgment. Payments, deploys and the
 payment gate are plain deterministic code on purpose — those must be exactly
 right every time, and an LLM adds risk there with no upside.
 
-- **Automatic lead hunting:** on the Setup page, list the searches you want
-  (one per line, e.g. `plumbers in Riverside, CA`) and tick *Search for new
-  leads automatically*. New no-website businesses are added on a schedule and
-  your phone buzzes to tell you.
+- **Automatic lead hunting:** you shouldn't have to know every town in your
+  county. On Setup, put in **your town** and **how far you'd travel**, check the
+  list of trades, and hit **Build my search list** — it looks up the real towns
+  around you and writes a search for every trade in every one of them. Then tick
+  *Search for new leads automatically*.
+- **What that costs:** Google bills per search — about $32 per 1,000 calls,
+  with the first 5,000 a month free. A run only spends the budget you set
+  (*searches per run*) and picks up where it left off next time, so a list of
+  240 searches works round over a couple of weeks instead of running all of it
+  twice a day. Setup shows the projected monthly figure and warns you if a
+  setting would take you past the free allowance.
 - **The Approve page:** every found business waits here. You see the exact
   email that would go out, word for word, and tap **Approve & send** (or
   *Approve & send all*). Nothing is ever emailed without that tap. Businesses
@@ -336,6 +343,8 @@ the EU's ePrivacy rules are much stricter).
   moving when a deal moves, and the landing counting what's waiting on you.
 - `tests/test_calls.py` — the call list, including a test that no route
   anywhere in the app can place a call or send a text.
+- `tests/test_territory.py` — building the search list from a town and a
+  radius, and the per-run budget that keeps Google's bill at zero.
 
 ```bash
 pip install flask requests anthropic inkbox
