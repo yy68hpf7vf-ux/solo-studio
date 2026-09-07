@@ -220,6 +220,26 @@ def line_for_today(today: date | None = None) -> dict:
     return {"text": text, "source": source}
 
 
+def call_opener(lead: dict, cfg: dict) -> str:
+    """A short thing to say when they answer. Plain, honest, and no API needed.
+
+    Deliberately not generated: it should read the same every time so it can be
+    practised, and it has to work before any keys are in.
+    """
+    name = (cfg.get("your_name") or "").strip() or "me"
+    studio = (cfg.get("studio_name") or "Solo Studio").strip()
+    price = fmt_price(cfg.get("site_price_usd", 500))
+    business = lead.get("name") or "your business"
+    return (
+        f"Hi, is this {business}? My name's {name}, I run {studio} — I build "
+        f"websites for local businesses.\n\n"
+        f"I noticed you don't have a website up. I can put together a simple "
+        f"one-page site for a flat ${price} — no monthly fee.\n\n"
+        f"What I'd normally do is design it first so you can see it, and you "
+        f"only pay if you like it. What's the best email to send it to?"
+    )
+
+
 def fmt_price(value) -> str:
     """500.0 -> '500', 499.5 -> '499.50' (for email/UI copy)."""
     try:
@@ -378,6 +398,7 @@ CREATE TABLE IF NOT EXISTS leads (
     phone TEXT,
     category TEXT,
     email TEXT,
+    last_called_at TEXT,
     stage TEXT NOT NULL DEFAULT 'found',
     do_not_contact INTEGER NOT NULL DEFAULT 0,
     thread_id TEXT,
@@ -452,7 +473,8 @@ class Database:
         """Add columns introduced after the first release to existing DBs."""
         c = self._conn()
         have = {row["name"] for row in c.execute("PRAGMA table_info(leads)")}
-        for col, decl in (("amount_cents", "INTEGER"),
+        for col, decl in (("last_called_at", "TEXT"),
+                          ("amount_cents", "INTEGER"),
                           ("suggested_email", "TEXT"),
                           ("suggested_email_source", "TEXT"),
                           ("suggested_email_note", "TEXT"),
@@ -503,6 +525,22 @@ class Database:
             " AND (suggested_email IS NULL OR suggested_email='')"
             " AND researched_at IS NULL ORDER BY created_at LIMIT ?",
             (STAGE_FOUND, limit)).fetchall()
+
+    def leads_to_call(self) -> list[sqlite3.Row]:
+        """Businesses with a phone number that outreach hasn't reached yet.
+
+        Whoever you haven't tried yet comes first, so the top of the list is
+        never someone you rang two minutes ago. Within that, the ones with no
+        email address lead — email can't reach them at all, so a call is the
+        only way that lead ever goes anywhere. Then longest-since-tried.
+        """
+        return self._conn().execute(
+            "SELECT * FROM leads WHERE stage=? AND do_not_contact=0"
+            " AND phone IS NOT NULL AND phone != ''"
+            " ORDER BY last_called_at IS NOT NULL ASC,"
+            "          (email IS NOT NULL AND email != '') ASC,"
+            "          last_called_at ASC, id ASC",
+            (STAGE_FOUND,)).fetchall()
 
     def leads_needing_email(self) -> list[sqlite3.Row]:
         return self._conn().execute(

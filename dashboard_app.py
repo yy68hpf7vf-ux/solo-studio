@@ -12,6 +12,7 @@ import argparse
 import base64
 import hmac
 import os
+import re
 import secrets
 import socket
 import threading
@@ -512,6 +513,10 @@ td a:hover{color:var(--acc)}
     <span style="background:var(--warn);color:#1a1206;border-radius:999px;
     padding:1px 7px;font-size:12px;font-weight:700;margin-left:3px"
     >{{ pending_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('calls_page') }}">Calls{% if call_count %}
+    <span style="background:var(--acc);color:var(--acc-ink);border-radius:999px;
+    padding:1px 7px;font-size:12px;font-weight:700;margin-left:3px"
+    >{{ call_count }}</span>{% endif %}</a>
   <a href="{{ url_for('house_page') }}">Studio</a>
   <a href="{{ url_for('team_page') }}">Team</a>
   <a href="{{ url_for('activity') }}">Activity</a>
@@ -1563,6 +1568,95 @@ work gets done — and nothing gets past the landing without you.</p>
 """
 
 
+CALLS = """
+{% extends "base" %}{% block body %}
+<style>
+.call{border:1px solid var(--line);border-radius:var(--r-md);padding:15px 17px;
+  margin-bottom:12px;background:var(--panel-2)}
+.call.cold{border-color:rgba(244,114,182,.26)}
+.call .top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.call .top b{font-size:15px}
+.call .where{font-size:12.5px;color:var(--mut);margin-top:2px}
+.tag{font-size:9.5px;font-weight:700;letter-spacing:.1em;padding:3px 8px;
+  border-radius:999px;text-transform:uppercase}
+.tag.only{background:rgba(244,114,182,.16);color:#f9a8d4}
+.tag.done{background:rgba(190,170,255,.08);color:var(--mut)}
+.dial{display:flex;gap:9px;margin-top:12px;flex-wrap:wrap}
+.dial a{font-size:15px;font-weight:650;letter-spacing:.01em}
+.script{margin-top:12px;border-left:2px solid rgba(244,114,182,.35);
+  padding:2px 0 2px 13px;font-size:13.5px;line-height:1.62;color:#cfc6e0;
+  white-space:pre-wrap}
+.after{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center;
+  padding-top:13px;border-top:1px solid var(--line-2)}
+.after input{width:auto;flex:1;min-width:190px}
+.after form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media (max-width:800px){ .dial a{width:100%;text-align:center} }
+</style>
+
+<div class="card">
+<div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap">
+  <h1 style="margin:0">Call list</h1>
+  <span class="muted">{{ leads|length }} business{{ '' if leads|length == 1
+    else 'es' }} you can phone today.</span>
+</div>
+
+<div class="note info" style="margin-top:14px">
+  <div class="k">Why this is a page and not a robot</div>
+  <p class="muted" style="margin:6px 0 0">Automatic cold texts and AI cold calls
+  are a legal trap in the US — the rules follow the phone number, and most small
+  business numbers are mobiles, at $500–$1,500 <b>per message or call</b>. So
+  Solo Studio will never dial or text for you. <b>You</b> calling is completely
+  normal business, it's free, and for trades it converts better than email ever
+  will. The app finds them and lines them up; you press call.</p>
+</div>
+
+{% if not leads %}
+  <p class="muted" style="margin-top:16px">Nobody to call yet. Businesses turn
+  up here once <b>Scout</b> finds them and they have a phone number —
+  Google Places gives you the number even when there's no email.</p>
+{% endif %}
+
+{% for item in leads %}
+{% set l = item.lead %}
+<div class="call {{ 'cold' if not l['email'] }}" style="margin-top:14px">
+  <div class="top">
+    <b>{{ l['name'] }}</b>
+    {% if not l['email'] %}<span class="tag only">phone is the only way in</span>
+    {% endif %}
+    {% if l['last_called_at'] %}<span class="tag done">tried
+      {{ l['last_called_at'][:10] }}</span>{% endif %}
+  </div>
+  <div class="where">{{ l['category'] or 'local business' }}{% if l['address'] %}
+    · {{ l['address'] }}{% endif %}</div>
+
+  <div class="dial">
+    <a class="btn btn-primary" href="tel:{{ item.tel }}">📞 Call {{ l['phone'] }}</a>
+    <a class="btn" href="sms:{{ item.tel }}">Text instead</a>
+  </div>
+
+  <details style="margin-top:12px">
+    <summary class="muted" style="cursor:pointer;font-size:13px">
+      What to say</summary>
+    <div class="script">{{ item.opener }}</div>
+  </details>
+
+  <div class="after">
+    <form method="post" action="{{ url_for('call_got_email', lead_id=l['id']) }}">
+      <input type="email" name="email" required placeholder="Email they gave you">
+      <button class="btn btn-primary">Got it — queue the email</button>
+    </form>
+    <form method="post" action="{{ url_for('call_logged', lead_id=l['id']) }}">
+      <button class="btn">No answer</button></form>
+    <form method="post" action="{{ url_for('call_pass', lead_id=l['id']) }}">
+      <button class="btn btn-danger">Not interested</button></form>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endblock %}
+"""
+
+
 SETUP_TEST = """
 {% extends "base" %}{% block body %}
 <div class="card">
@@ -1596,8 +1690,13 @@ def _inject():
         stamp = _live_stamp()
     except Exception:
         stamp = ""
+    try:
+        callable_now = len(STATE.db.leads_to_call())
+    except Exception:
+        callable_now = 0
     return {"config": STATE.config, "pwa_meta": PWA_META,
             "cloud_mode": CLOUD_MODE, "pending_count": pending,
+            "call_count": callable_now,
             "live_stamp": stamp, "update_ready": _restart_pending()}
 
 
@@ -2928,6 +3027,57 @@ ROOM_TINT = {
     "designer": "rgba(232,121,249,.42)", "deployer": "rgba(103,232,249,.40)",
     "biller": "rgba(110,231,183,.42)",   "delivery": "rgba(167,139,250,.45)",
 }
+
+
+@app.get("/calls")
+def calls_page():
+    cfg = STATE.config
+    leads = STATE.db.leads_to_call()
+    return _render(CALLS, leads=[
+        {"lead": l,
+         "tel": re.sub(r"[^0-9+]", "", l["phone"] or ""),
+         "opener": core.call_opener(dict(l), cfg)} for l in leads])
+
+
+@app.post("/action/call_email/<int:lead_id>")
+def call_got_email(lead_id):
+    """They gave you an address on the phone — put them in the normal queue."""
+    email = (request.form.get("email") or "").strip()
+    STATE.db.update_lead(lead_id, last_called_at=core._now())
+    result = STATE.agent.set_email(lead_id, email)
+    if result.get("ok"):
+        lead = STATE.db.get_lead(lead_id)
+        STATE.db.log(lead_id, "call_logged",
+                     f"Called {lead['name']} — they gave {email}")
+        flash(f"Saved. {lead['name']} is on the Approve page — the email still "
+              "needs your OK before it sends.", "ok")
+    else:
+        flash(result.get("error", "That didn't look like an email address."), "err")
+    return redirect(url_for("calls_page"))
+
+
+@app.post("/action/call_logged/<int:lead_id>")
+def call_logged(lead_id):
+    lead = STATE.db.get_lead(lead_id)
+    if lead is None:
+        abort(404)
+    STATE.db.update_lead(lead_id, last_called_at=core._now())
+    STATE.db.log(lead_id, "call_logged", f"Called {lead['name']} — no answer")
+    flash(f"Logged. {lead['name']} drops to the bottom of the list.", "ok")
+    return redirect(url_for("calls_page"))
+
+
+@app.post("/action/call_pass/<int:lead_id>")
+def call_pass(lead_id):
+    lead = STATE.db.get_lead(lead_id)
+    if lead is None:
+        abort(404)
+    STATE.db.update_lead(lead_id, last_called_at=core._now(), do_not_contact=1)
+    STATE.db.claim(lead_id, [core.STAGE_FOUND], core.STAGE_NOT_INTERESTED)
+    STATE.db.log(lead_id, "call_logged",
+                 f"Called {lead['name']} — not interested, won't contact again")
+    flash(f"{lead['name']} won't be contacted again.", "ok")
+    return redirect(url_for("calls_page"))
 
 
 @app.get("/house")

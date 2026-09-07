@@ -223,6 +223,24 @@ Your chat is saved in the app's database, so it's still there tomorrow and on
 your phone. **Clear chat** wipes it. Answers use your own Anthropic key — the
 same one that designs the sites — so they cost a fraction of a cent each.
 
+### The call list — the one channel besides email
+
+Google Places gives you a **phone number** even when there's no email, so a
+lead that outreach can't reach is not a dead end. The **Calls** page lines those
+up: phone-only businesses first, whoever you haven't tried at the top, a
+tap-to-call button, and something to say when they answer. Take the email off
+them on the phone, type it in, and they drop into the normal Approve queue —
+the cold email still needs your OK before it sends.
+
+**Why the app will never dial or text on its own.** In the US the TCPA follows
+the phone *number*, not the context, and most small business numbers are
+mobiles — automated cold texts run $500–$1,500 **per message**, and the FCC has
+ruled that AI-generated voices count as "artificial" calls under the same rules,
+at the same price. Carriers block unregistered bulk sending anyway. So there is
+no send button here on purpose: the app finds them and hands you a `tel:` link.
+You calling is ordinary business, costs nothing, and for trades it converts
+better than email ever will.
+
 ### A line a day
 
 The top of the Dashboard carries one line, the same all day, a different one
@@ -316,6 +334,8 @@ the EU's ePrivacy rules are much stricter).
   and that it is never handed tools it could act with.
 - `tests/test_house.py` — the Studio: every lead in exactly one room, rooms
   moving when a deal moves, and the landing counting what's waiting on you.
+- `tests/test_calls.py` — the call list, including a test that no route
+  anywhere in the app can place a call or send a text.
 
 ```bash
 pip install flask requests anthropic inkbox
