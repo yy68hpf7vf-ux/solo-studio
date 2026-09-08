@@ -1087,7 +1087,7 @@ postal address on commercial email.</p>
 address. It only ever suggests — you accept or reject each one.</p>
 <label>Searches per run</label>
 <input type="number" name="searches_per_run" min="1" max="60"
-  value="{{ config.searches_per_run or 10 }}">
+  value="{{ config.searches_per_run or 20 }}">
 <div class="note {{ 'warn' if cost.over else 'info' }}" style="margin-top:8px">
   <div class="k">What Google will charge you</div>
   <p class="muted" style="margin:5px 0 0">{{ cost.searches }} searches saved,
@@ -1744,6 +1744,12 @@ SETUP_TEST = """
 from jinja2 import DictLoader  # noqa: E402
 
 app.jinja_env.loader = DictLoader({"base": BASE})
+
+
+@app.template_filter("platform")
+def _platform_name(url: str) -> str:
+    """"facebook.com" out of a link, for "running on ... alone"."""
+    return core.social_platform(url) or "social media"
 
 
 @app.context_processor
@@ -2735,6 +2741,11 @@ by themselves.</p></div>
   <div class="muted">{{ item.lead['category'] or '' }}{% if item.lead['address'] %}
     · {{ item.lead['address'] }}{% endif %}{% if item.lead['phone'] %}
     · {{ item.lead['phone'] }}{% endif %}</div>
+  {% if item.lead['social_url'] %}
+  <div class="muted" style="margin-top:4px">No website — running on
+    <a href="{{ item.lead['social_url'] }}" target="_blank"
+       rel="noopener noreferrer">{{ item.lead['social_url']|platform }}</a> alone.</div>
+  {% endif %}
   <div class="muted" style="margin:6px 0"><b>To:</b> {{ item.lead['email'] }}</div>
   {% if item.rendered.ok %}
   <div class="emailbox">
@@ -2846,9 +2857,10 @@ def run_searches():
         if r.get("skipped"):
             flash(f"Nothing to do — {r['skipped']}. Add searches in Setup.", "err")
         else:
-            flash(f"Search finished: {r.get('added', 0)} new leads added.", "ok")
+            flash(r.get("summary", "Search finished."),
+                  "ok" if r.get("added") else "err")
     except Exception as e:
-        flash(str(e), "err")
+        flash(core.explain(e, 300), "err")
     return redirect(url_for("approve_queue"))
 
 
@@ -3440,10 +3452,9 @@ def find_leads():
         return redirect(url_for("dashboard"))
     try:
         r = STATE.agent.find_leads(query)
-        flash(f"Found {r['found']} businesses without websites; {r['added']} new "
-              "leads added.", "ok")
+        flash(core.describe_search(r), "ok" if r["added"] else "err")
     except Exception as e:
-        flash(str(e), "err")
+        flash(core.explain(e, 300), "err")
     return redirect(url_for("dashboard"))
 
 
@@ -3804,7 +3815,7 @@ def _search_cost(cfg) -> dict:
     """
     queries = len([q for q in (cfg.get("saved_searches") or "").splitlines()
                    if q.strip()])
-    per_run = max(1, int(cfg.get("searches_per_run", 10) or 10))
+    per_run = max(1, int(cfg.get("searches_per_run", 20) or 20))
     hours = max(1, int(cfg.get("search_interval_hours", 12) or 12))
     per_run = min(per_run, queries) if queries else 0
     runs_month = (24 / hours) * 30.4
@@ -3845,7 +3856,14 @@ def build_searches():
         flash(f"Couldn't work out the towns: {core.explain(e)}", "err")
         return redirect(url_for("setup"))
 
-    lines = [f"{trade} in {town}" for town in towns for trade in trades]
+    # Order matters more than it looks. A run only spends a fixed budget of
+    # searches, so listing every trade in one town before moving on meant the
+    # first run never left that town — and the town people type is the big
+    # city, where every business already has a website. Rotate instead: each
+    # sweep visits all the towns, with a different trade each time, so one run
+    # covers as much ground as it has searches.
+    lines = [f"{trades[(j + k) % len(trades)]} in {towns[j]}"
+             for k in range(len(trades)) for j in range(len(towns))]
     cfg = core.load_config()
     cfg.update(territory_base=base, territory_miles=miles,
                saved_searches="\n".join(lines))

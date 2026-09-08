@@ -34,6 +34,7 @@ import threading
 import time
 import zipfile
 from datetime import date, datetime, timezone
+from urllib.parse import urlsplit
 
 import requests
 
@@ -359,7 +360,10 @@ DEFAULT_CONFIG = {
     "research_per_tick": 3,           # how many leads to research each round
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
-    "searches_per_run": 10,       # Google bills per search — see cost note in Setup
+    # 20 searches x 3 pages, twice a day, is ~3,600 Google calls a month —
+    # inside the 5,000 free ones, and enough ground per run to actually turn
+    # something up. The Setup page projects the cost of any other number.
+    "searches_per_run": 20,
     "territory_base": "",         # e.g. "Napanoch, NY"
     "territory_miles": 30,
     "daily_send_cap": 20,         # max approved cold emails sent per day
@@ -413,6 +417,7 @@ CREATE TABLE IF NOT EXISTS leads (
     phone TEXT,
     category TEXT,
     email TEXT,
+    social_url TEXT,        -- their Facebook/Instagram page, when that's all they have
     last_called_at TEXT,
     stage TEXT NOT NULL DEFAULT 'found',
     do_not_contact INTEGER NOT NULL DEFAULT 0,
@@ -489,6 +494,7 @@ class Database:
         c = self._conn()
         have = {row["name"] for row in c.execute("PRAGMA table_info(leads)")}
         for col, decl in (("last_called_at", "TEXT"),
+                          ("social_url", "TEXT"),
                           ("amount_cents", "INTEGER"),
                           ("suggested_email", "TEXT"),
                           ("suggested_email_source", "TEXT"),
@@ -571,15 +577,17 @@ class Database:
 
     # -- leads ------------------------------------------------------------
 
-    def add_lead(self, *, place_id, name, address, phone, category, email=None) -> int | None:
+    def add_lead(self, *, place_id, name, address, phone, category, email=None,
+                 social_url=None) -> int | None:
         """Insert a lead; returns new id, or None if this place already exists."""
         c = self._conn()
         try:
             with c:
                 cur = c.execute(
                     "INSERT INTO leads (place_id, name, address, phone, category, email,"
-                    " stage, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (place_id, name, address, phone, category, email,
+                    " social_url, stage, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (place_id, name, address, phone, category, email, social_url,
                      STAGE_FOUND, _now(), _now()),
                 )
             return cur.lastrowid
@@ -822,6 +830,83 @@ def explain(e, limit: int = 200) -> str:
     return text[:limit]
 
 
+# A Facebook page sitting in Google's "website" slot is not a website. It is
+# the clearest signal on the whole listing that this business never got one —
+# and it is a warmer lead than a blank, because someone there already tried.
+# Same for the rest: a profile on somebody else's platform, or a Google
+# Business "site" from the builder Google shut down, whose links mostly 404.
+SOCIAL_ONLY_HOSTS = (
+    "facebook.com", "fb.me", "fb.com", "instagram.com", "linktr.ee",
+    "linktree.com", "yelp.com", "business.site", "sites.google.com",
+    "g.page", "tiktok.com", "twitter.com", "x.com", "linkedin.com",
+    "nextdoor.com", "wa.me", "menulink.online",
+)
+
+
+def social_platform(url: str) -> str:
+    """The platform a 'website' link really is, or '' when it's a real site."""
+    if not url:
+        return ""
+    host = urlsplit(url if "//" in url else "//" + url).netloc.lower()
+    host = host.split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    if host.startswith("m."):
+        host = host[2:]
+    for known in SOCIAL_ONLY_HOSTS:
+        if host == known or host.endswith("." + known):
+            return known
+    return ""
+
+
+class SearchResults(list):
+    """Leads found, plus what was passed over on the way there.
+
+    A search that comes back empty is not the same as a search that went
+    wrong, and neither is the same as a search whose every result already sits
+    in the database. Carrying the counts means the app can say which.
+    """
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.seen = 0            # businesses Google returned
+        self.with_site = 0       # rejected: they already have a real website
+        self.closed = 0          # rejected: permanently closed
+        self.social_only = 0     # kept: only a Facebook/Instagram/Yelp page
+
+
+def describe_search(r: dict) -> str:
+    """One sentence saying what a search actually did.
+
+    A search that finds nothing used to say nothing at all, which left the
+    only honest question — why? — with no answer anywhere in the app. Every
+    outcome here names its own reason.
+    """
+    seen = r.get("seen", 0)
+    if not seen:
+        return ("Google returned no businesses at all — check the spelling of "
+                "the town, or try a bigger one nearby.")
+    added, found = r.get("added", 0), r.get("found", 0)
+    bits = [f"looked at {seen}"]
+    if r.get("with_site"):
+        bits.append(f"{r['with_site']} already have a website")
+    if r.get("closed"):
+        bits.append(f"{r['closed']} closed down")
+    social = r.get("social_only", 0)
+    if found:
+        kept = f"{found} with no website of their own"
+        if social:
+            kept += f" ({social} of them running on social media alone)"
+        bits.append(kept)
+    head = ", ".join(bits)
+    if added:
+        return f"{head} — {added} new."
+    if found:
+        return f"{head} — all already in your list."
+    return (f"{head}. Everyone Google showed here has a site already; smaller "
+            "towns nearby are where the gaps are.")
+
+
 class Services:
     def __init__(self, config: dict):
         self.config = config
@@ -831,8 +916,15 @@ class Services:
 
     # -- Google Places (New) ----------------------------------------------
 
-    def places_search_no_website(self, query: str, max_results: int = 60) -> list[dict]:
-        """Text-search businesses and keep only those without a website."""
+    def places_search_no_website(self, query: str,
+                                 max_results: int = 60) -> SearchResults:
+        """Text-search businesses and keep the ones with no website of their own.
+
+        "No website" includes a listing whose only link is a Facebook page or
+        the like: that business has nowhere of its own to send a customer,
+        which is the entire pitch. Counts of what was passed over come back
+        with the results so an empty search can explain itself.
+        """
         key = self.config.get("google_places_api_key", "")
         if not key:
             raise ServiceError("Google Places API key is not set (see Setup).")
@@ -848,7 +940,7 @@ class Services:
             "X-Goog-FieldMask": field_mask,
             "Content-Type": "application/json",
         }
-        results: list[dict] = []
+        results = SearchResults()
         page_token = None
         while len(results) < max_results:
             body: dict = {"textQuery": query, "pageSize": 20}
@@ -860,10 +952,17 @@ class Services:
                     f"Google Places error {resp.status_code}: {resp.text[:300]}")
             data = resp.json()
             for p in data.get("places", []):
-                if p.get("websiteUri"):
-                    continue  # has a website — not our lead
+                results.seen += 1
                 if p.get("businessStatus") not in (None, "OPERATIONAL"):
+                    results.closed += 1
                     continue
+                site = p.get("websiteUri") or ""
+                platform = social_platform(site)
+                if site and not platform:
+                    results.with_site += 1
+                    continue  # a real website — not our lead
+                if platform:
+                    results.social_only += 1
                 results.append({
                     "place_id": p.get("id"),
                     "name": (p.get("displayName") or {}).get("text", "Unknown"),
@@ -872,11 +971,13 @@ class Services:
                     "category": p.get("primaryTypeDisplayName", {}).get("text")
                     if isinstance(p.get("primaryTypeDisplayName"), dict)
                     else p.get("primaryTypeDisplayName"),
+                    "social_url": site or None,
                 })
             page_token = data.get("nextPageToken")
             if not page_token:
                 break
-        return results[:max_results]
+        del results[max_results:]
+        return results
 
     # -- Inkbox email ------------------------------------------------------
 
@@ -1143,10 +1244,15 @@ you do not know instead of inventing a lead, a figure, or a setting."""
             f"of {base}.\n\n"
             "Rules:\n"
             "- Real inhabited places only, the kind that have local trades in "
-            "them. No neighbourhoods of one city, no townships that nobody "
-            "uses as an address.\n"
-            "- Include the starting place itself.\n"
-            "- Biggest and best-known first.\n"
+            "them and that people use as a postal address. No townships nobody "
+            "names.\n"
+            "- Around a big city, its separate suburbs and small incorporated "
+            "cities count, and are wanted.\n"
+            "- SMALLEST first, biggest last. This is for a one-person web "
+            "designer looking for businesses that never got a website, and in "
+            "a city centre every business already has one. The small places "
+            "are the whole point.\n"
+            "- Include the starting place itself, but put it last.\n"
             "- At most 25.\n"
             '- Format each as "Town, ST" on its own line. Nothing else — no '
             "numbering, no commentary, no blank lines."
@@ -1192,11 +1298,16 @@ you do not know instead of inventing a lead, a figure, or a setting."""
             who.append(f"Phone: {lead['phone']}")
         if lead.get("category"):
             who.append(f"Type: {lead['category']}")
+        # When Google gave us their Facebook page instead of a website, hand it
+        # over: it is usually the one page on the internet with their email.
+        if lead.get("social_url"):
+            who.append(f"Their only web presence: {lead['social_url']}")
         prompt = (
             "Find the public contact email address for this specific local "
             "business:\n\n" + "\n".join(who) + "\n\n"
-            "It has no website, so check places like its Facebook page, Yelp or "
-            "Google listing, a directory, or a chamber-of-commerce page.\n\n"
+            "It has no website of its own, so check places like its Facebook "
+            "page, Yelp or Google listing, a directory, or a chamber-of-commerce "
+            "page.\n\n"
             "Rules:\n"
             "- Only report an address you actually saw on a page, with the URL.\n"
             "- It must clearly belong to THIS business (match the address or "
@@ -1439,9 +1550,13 @@ class Agent:
                 continue
             if self.db.add_lead(**p) is not None:
                 added += 1
-        self.db.log(None, "find_leads",
-                    f"Query {query!r}: {len(found)} no-website businesses, {added} new")
-        return {"found": len(found), "added": added}
+        r = {"found": len(found), "added": added,
+             "seen": getattr(found, "seen", len(found)),
+             "with_site": getattr(found, "with_site", 0),
+             "closed": getattr(found, "closed", 0),
+             "social_only": getattr(found, "social_only", 0)}
+        self.db.log(None, "find_leads", f"{query!r}: {describe_search(r)}")
+        return r
 
     # -- outreach ----------------------------------------------------------
 
@@ -1975,7 +2090,7 @@ class Agent:
         # next time, working round the list instead of running all of it every
         # time — a hundred saved searches on a 12-hour loop would otherwise be
         # hundreds of dollars a month.
-        per_run = max(1, int(cfg.get("searches_per_run", 10) or 10))
+        per_run = max(1, int(cfg.get("searches_per_run", 20) or 20))
         try:
             cursor = int(self.db.get_kv("search_cursor") or 0)
         except (TypeError, ValueError):
@@ -1985,25 +2100,44 @@ class Agent:
                  for i in range(min(per_run, len(queries)))]
         self.db.set_kv("search_cursor", str((cursor + len(batch)) % len(queries)))
 
-        added = 0
+        added = seen = kept = failed = 0
         for query in batch:
             try:
-                added += self.find_leads(query)["added"]
+                r = self.find_leads(query)
             except Exception as e:
+                failed += 1
                 self.db.log(None, "auto_search_failed",
                             f"Search {query!r} failed: {explain(e, 300)}"[:400])
+                continue
+            added += r.get("added", 0)
+            seen += r.get("seen", 0)
+            kept += r.get("found", 0)
+
+        waiting = len(self.db.leads_awaiting_approval())
+        need_email = len(self.db.leads_needing_email())
+        # Always say what happened. A run that finds nothing is the one the
+        # user most needs explained, and it used to log nothing at all.
+        summary = (f"Searched {len(batch)} of {len(queries)} areas, looked at "
+                   f"{seen} businesses — {added} new leads.")
+        if failed == len(batch):
+            summary = (f"All {failed} searches failed — see the entries above "
+                       "for why.")
+        elif not added:
+            if kept:
+                summary += " Everyone without a website here is already in your list."
+            elif seen:
+                summary += (" Every business Google showed had a website. The "
+                            "next run moves on to different areas.")
+            else:
+                summary += " Google returned nothing for these areas."
+        self.db.log(None, "auto_search", summary)
         if added:
-            waiting = len(self.db.leads_awaiting_approval())
-            need_email = len(self.db.leads_needing_email())
-            self.db.log(None, "auto_search",
-                        f"Searched {len(batch)} of {len(queries)} areas — "
-                        f"added {added} new leads "
-                        f"({waiting} ready to approve, {need_email} need an "
-                        "email address).")
             self._notify(f"{added} new leads found",
                          f"{waiting} ready for your approval, {need_email} still "
                          "need an email address.", tags="mag")
-        return {"ok": True, "added": added}
+        return {"ok": True, "added": added, "seen": seen, "kept": kept,
+                "searched": len(batch), "total": len(queries), "failed": failed,
+                "summary": summary}
 
     def research_missing_emails(self, force: bool = False, limit: int = None) -> dict:
         """Researcher: hunt public contact emails for leads that lack one.

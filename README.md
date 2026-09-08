@@ -77,6 +77,17 @@ left. Work down the list in order:
 | 4 | Stripe | 3 min | Takes the payment |
 | 5 | Google Places | 10 min | Finds businesses with no website |
 
+**What counts as "no website".** A business whose only link is a Facebook or
+Instagram page counts — it has nowhere of its own to send a customer, which is
+the whole pitch, and someone there already tried, which makes it a warmer lead
+than a blank listing. The approve screen shows which is which.
+
+**Where the leads are.** Not in the city centre. Type your city into the
+territory builder and it works outwards to the small towns and suburbs around
+it, smallest first, because in a big city every business already has a site.
+Every search now reports what it looked at and why it kept or skipped it, so a
+run that finds nothing tells you which of those it was.
+
 Google Places is last on purpose: it's the only one that needs a card on file,
 and everything else works without it — you'd just be adding businesses by hand.
 
