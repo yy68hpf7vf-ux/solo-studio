@@ -538,7 +538,16 @@ class ApprovalQueueTest(PipelineFixture):
         again = self.agent.run_saved_searches()
         self.assertEqual(again.get("skipped"), "not due yet")
 
-    def test_auto_search_off_by_default(self):
+    def test_searching_runs_by_default_and_still_sends_nothing(self):
+        """It is on now: an app meant to do the work on its own shouldn't need
+        a switch found first. Finding is not contacting — the queue fills, the
+        outbox doesn't."""
+        self.config["saved_searches"] = "plumbers"
+        self.assertIsNone(self.agent.run_saved_searches().get("skipped"))
+        self.assertEqual(self.svc.sent_emails, [])
+
+    def test_it_can_still_be_switched_off(self):
+        self.config["auto_search_enabled"] = False
         self.config["saved_searches"] = "plumbers"
         self.assertEqual(self.agent.run_saved_searches().get("skipped"),
                          "auto search off")

@@ -130,9 +130,32 @@ class WatchmanTest(unittest.TestCase):
 
     # -- switched off --------------------------------------------------------
 
-    def test_autopilot_off_is_worth_saying_but_is_not_a_fault(self):
-        self.assertEqual(self.look(autopilot_enabled=False)["autopilot-off"]["level"],
-                         self.core.WATCH)
+    def test_jarvis_being_switched_off_is_the_loudest_thing_on_the_screen(self):
+        """Nothing happening and nothing said is the failure this app kept
+        having. If he isn't working, that is a fault, not a footnote."""
+        f = self.look(autopilot_enabled=False)["autopilot-off"]
+        self.assertEqual(f["level"], self.core.FIX)
+        self.assertIn("switched off", f["title"])
+
+    def test_hunting_being_off_is_a_fault_too(self):
+        f = self.look(auto_search_enabled=False)["search-off"]
+        self.assertEqual(f["level"], self.core.FIX)
+
+    def test_a_used_up_search_budget_says_so_rather_than_going_quiet(self):
+        f = self.core.checkup(self.db, self.cfg, spent=5000, cap=4500)
+        ids = {x["id"]: x for x in f}
+        self.assertIn("google-spent", ids)
+        self.assertEqual(ids["google-spent"]["level"], self.core.FIX)
+        self.assertIn("5000", ids["google-spent"]["detail"])
+
+    def test_a_budget_with_room_left_says_nothing(self):
+        ids = {x["id"] for x in self.core.checkup(self.db, self.cfg,
+                                                  spent=10, cap=4500)}
+        self.assertNotIn("google-spent", ids)
+
+    def test_automation_is_on_out_of_the_box(self):
+        self.assertTrue(self.core.DEFAULT_CONFIG["autopilot_enabled"])
+        self.assertTrue(self.core.DEFAULT_CONFIG["auto_search_enabled"])
 
     def test_a_test_mode_stripe_key_is_flagged_as_practice_not_failure(self):
         f = self.look(stripe_secret_key="sk_test_123")["stripe-test"]

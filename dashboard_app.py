@@ -3255,10 +3255,14 @@ def current_findings() -> list[dict]:
         extra.append(core.finding(
             "restart-pending", core.WATCH, "An update is installed but not running",
             "Restart to start using it.", "/updates", "Restart"))
+    try:
+        spent = STATE.agent.google_calls_this_month()
+    except Exception:
+        spent = None
     return core.checkup(STATE.db, STATE.config,
                         [(k["name"], k["field"]) for k in KEY_FIELDS
                          if not k.get("optional")],
-                        extra)
+                        extra, spent=spent)
 
 
 def _restart_pending() -> bool:

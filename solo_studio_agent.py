@@ -445,11 +445,15 @@ DEFAULT_CONFIG = {
         "and I won't contact you again."
     ),
     # Behavior.
-    "autopilot_enabled": False,   # background processing of replies/payments
+    # On by default. An app whose whole point is doing the work on its own
+    # should not need two switches found and flipped first — being off, and
+    # saying nothing about it, is how it sat silent.
+    "automation_on_by_default": False,   # flipped true by the migration below
+    "autopilot_enabled": True,   # background processing of replies/payments
     "poll_interval_seconds": 60,
     # Automatic prospecting: the agent runs these searches on a schedule and
     # queues what it finds for your approval. It never emails anyone on its own.
-    "auto_search_enabled": False,
+    "auto_search_enabled": True,
     "auto_research_enabled": True,    # let the Researcher hunt missing emails
     "research_per_tick": 3,           # how many leads to research each round
     # An address the Researcher found goes straight onto the lead instead of
@@ -495,6 +499,17 @@ def load_config() -> dict:
             cfg.update(stored)
     except (FileNotFoundError, json.JSONDecodeError):
         pass
+    if not cfg.get("automation_on_by_default"):
+        # Anyone set up before automation was the default has both switches
+        # saved as off, which is why nothing appeared to happen. Turn them on
+        # once, and record that it's been done so a deliberate "off" sticks.
+        cfg["autopilot_enabled"] = True
+        cfg["auto_search_enabled"] = True
+        cfg["automation_on_by_default"] = True
+        try:
+            save_config(cfg)
+        except OSError:
+            pass
     return cfg
 
 
@@ -1276,9 +1291,12 @@ def finding(id, level, title, detail, where="/", cta="") -> dict:
             "where": where, "cta": cta}
 
 
-def checkup(db, cfg, key_fields=API_KEYS, extra=()) -> list[dict]:
+def checkup(db, cfg, key_fields=API_KEYS, extra=(),
+            spent: int = None, cap: int = None) -> list[dict]:
     """Everything currently worth telling the owner, worst first."""
     out = []
+    cap = cap or int(cfg.get("monthly_google_cap", GOOGLE_CALL_CAP)
+                     or GOOGLE_CALL_CAP)
 
     # -- can it work at all -------------------------------------------------
     missing = [name for name, field in key_fields if not cfg.get(field)]
@@ -1399,21 +1417,28 @@ def checkup(db, cfg, key_fields=API_KEYS, extra=()) -> list[dict]:
             "They saw a site with their name on it and went quiet.",
             "/calls", "Call"))
 
-    # -- switched off -------------------------------------------------------
+    # -- reasons JARVIS might be doing nothing ------------------------------
+    # Silence is the worst outcome here. If he isn't working, that is the most
+    # important thing on the screen, not something to leave the owner guessing
+    # about.
     if not cfg.get("autopilot_enabled"):
         out.append(finding(
-            "autopilot-off", WATCH, "Autopilot is off",
-            "Replies and payments are only checked when you press a button.",
-            "/setup", "Turn it on"))
+            "autopilot-off", FIX, "JARVIS is switched off",
+            "He isn't hunting for leads, reading replies or checking payments. "
+            "Nothing happens on its own until this is back on.",
+            "/setup", "Turn him on"))
     elif not cfg.get("auto_search_enabled"):
         out.append(finding(
-            "search-off", WATCH, "Automatic lead hunting is off",
-            "No new leads will appear on their own.", "/setup", "Turn it on"))
-    elif not (cfg.get("saved_searches") or "").strip():
+            "search-off", FIX, "Lead hunting is switched off",
+            "JARVIS is running, but he won't go looking for anyone. No new "
+            "leads will appear on their own.", "/setup", "Turn it on"))
+    elif spent is not None and spent >= cap:
         out.append(finding(
-            "no-searches", WATCH, "No saved searches",
-            "Put your town in on Setup and it builds the list for you.",
-            "/setup", "Build the list"))
+            "google-spent", FIX, "This month's search budget is used up",
+            "%d Google searches used of the %d you allow, so hunting has "
+            "stopped until the 1st. Raise the cap in Setup if you want more "
+            "(the first 5,000 a month are free)." % (spent, cap),
+            "/setup", "Setup"))
 
     if str(cfg.get("stripe_secret_key", "")).startswith("sk_test"):
         out.append(finding(

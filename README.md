@@ -114,6 +114,16 @@ address you already gave for the emails. If there's no address either, he
 crawls the country anyway rather than doing nothing. "Without clicking
 anything" means exactly that.
 
+**It is on out of the box.** Autopilot and lead hunting used to ship switched
+off, which meant a new app sat there doing nothing and saying nothing about it.
+Both are on now, and upgrading turns them on once for anyone who had them off
+by default — after which a deliberate "off" sticks.
+
+**He never goes quiet.** Every reason JARVIS might not be working is a fault at
+the top of the Dashboard, not something to guess at: switched off, hunting
+switched off, the month's search budget used up, a key missing, no credit. If
+nothing is happening, the screen says why.
+
 **It works with nothing else working.** Out of Claude credit, OpenStreetMap
 down, Yelp not set up — the crawl still runs, because the city list is built in
 rather than looked up.
