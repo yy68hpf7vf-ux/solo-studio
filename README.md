@@ -213,6 +213,32 @@ from anywhere, on any network.
 - Any host that runs a Python web app with a persistent disk works the same
   way; Render is just the least fiddly.
 
+## JARVIS does the work
+
+He runs continuously in the background, and none of it happens inside a page
+request — hunting an area or looking up a batch of addresses takes a minute or
+two, and a page that hangs that long reads as a broken app. Whatever he is
+doing shows as a banner on every page, and the page comes back on its own when
+he's done.
+
+On each round he reads replies, checks payments, unsticks anything mid-step,
+runs your saved searches, **restocks when the shelf runs low** (fewer than 15
+leads waiting, at most once every 6 hours, and only if you've set a home town),
+and **looks up the email addresses** of leads that don't have one.
+
+An address he finds goes straight onto the lead, with a note of where he found
+it. The Approve page shows the address, marks it "JARVIS found this, you
+haven't checked it", and links the page he took it from. **Nothing about
+sending changes:** a person still reads and approves every cold email, with
+that address in front of them. Prefer the old second-click? Turn off
+auto-accept in Setup and he'll only suggest.
+
+**The money tap.** Google gives 5,000 searches a month free and charges about
+$32 per thousand after that. Every call — a hunt, a saved search, a button —
+counts against one monthly meter, and JARVIS refuses to make another once it
+hits the cap, which ships at 4,500, under the free line. Letting him work
+continuously is only safe because something says no on your behalf.
+
 ## JARVIS keeps watch
 
 The app checks itself continuously — on every background tick, whether or not

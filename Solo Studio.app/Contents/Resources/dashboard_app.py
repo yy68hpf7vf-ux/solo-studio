@@ -322,6 +322,18 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
    are gone: nothing here moves because the mouse passed over it. */
 .card{position:relative}
 
+/* What JARVIS is doing right now. On every page, because the answer to "is it
+   working or is it stuck" should never depend on which tab you are on. */
+.working{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:0 0 16px;padding:11px 15px;border-radius:var(--r-md);
+  background:rgba(244,114,182,.08);border:1px solid rgba(244,114,182,.22)}
+.working.done{background:var(--panel-2);border-color:var(--line)}
+.working .spin{flex:0 0 auto;width:11px;height:11px;border-radius:50%;
+  border:2px solid rgba(244,114,182,.3);border-top-color:var(--acc);
+  animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.working .spin{animation:none}}
+
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
   padding:13px 22px;color:var(--ink);
@@ -486,6 +498,13 @@ td a:hover{color:var(--acc)}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% for cat, m in messages %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
 {% endwith %}
+{% if job.running %}
+<div class="working"><span class="spin" aria-hidden="true"></span>
+  <b>JARVIS is {{ job.label }}.</b>
+  <span class="muted">This page updates itself when he's done.</span></div>
+{% elif job.summary %}
+<div class="working done"><b>JARVIS:</b> <span>{{ job.summary }}</span></div>
+{% endif %}
 {% block body %}{% endblock %}
 </main>
 <div id="live-pill" hidden>New activity — tap to refresh</div>
@@ -626,19 +645,6 @@ get started — nothing works until then.</div>
 
 <div class="card">
 <h2>Find new leads</h2>
-{% if hunt.running %}
-<div class="note info" style="margin-bottom:12px">
-  <b>JARVIS is out hunting near {{ hunt.area }}.</b>
-  <div class="muted" style="margin-top:3px">He works through the towns around
-  it, a different trade each time, and stops as soon as he has enough. Takes a
-  minute; this page updates itself.</div>
-</div>
-{% elif hunt.summary %}
-<div class="note info" style="margin-bottom:12px">
-  <b>JARVIS is back.</b>
-  <div class="muted" style="margin-top:3px">{{ hunt.summary }}</div>
-</div>
-{% endif %}
 <form method="post" action="{{ url_for('find_leads') }}" style="display:flex;gap:10px">
   <input type="text" name="query" required
     placeholder='A town — "Los Angeles, CA" — and JARVIS works out the rest'>
@@ -1599,7 +1605,7 @@ def _inject():
         callable_now = 0
     return {"config": STATE.config, "pwa_meta": PWA_META,
             "cloud_mode": CLOUD_MODE, "pending_count": pending,
-            "call_count": callable_now,
+            "call_count": callable_now, "job": dict(JOB),
             "live_stamp": stamp, "update_ready": _restart_pending()}
 
 
@@ -2598,7 +2604,7 @@ def dashboard():
     return _render(DASHBOARD, leads=leads, today_line=core.line_for_today(),
                    stage_counts=[(s, counts[s]) for s in order],
                    attention=db.attention_events(), configured=configured,
-                   findings=current_findings(), hunt=dict(HUNT))
+                   findings=current_findings())
 
 
 
@@ -2638,7 +2644,13 @@ by themselves.</p></div>
     <a href="{{ item.lead['social_url'] }}" target="_blank"
        rel="noopener noreferrer">{{ item.lead['social_url']|platform }}</a> alone.</div>
   {% endif %}
-  <div class="muted" style="margin:6px 0"><b>To:</b> {{ item.lead['email'] }}</div>
+  <div class="muted" style="margin:6px 0"><b>To:</b> {{ item.lead['email'] }}
+  {% if item.lead['email_source'] %}
+    <span style="color:var(--warn)">· JARVIS found this, you haven't checked it</span>
+    <div style="font-size:12px;margin-top:2px">from
+      <a href="{{ item.lead['email_source'] }}" target="_blank"
+         rel="noopener noreferrer">{{ item.lead['email_source'][:90] }}</a></div>
+  {% endif %}</div>
   {% if item.rendered.ok %}
   <div class="emailbox">
     <div class="subj">{{ item.rendered.subject }}</div>
@@ -2744,15 +2756,16 @@ def approve_all():
 
 @app.post("/action/run_searches")
 def run_searches():
-    try:
+    def work():
         r = STATE.agent.run_saved_searches(force=True)
         if r.get("skipped"):
-            flash(f"Nothing to do — {r['skipped']}. Add searches in Setup.", "err")
-        else:
-            flash(r.get("summary", "Search finished."),
-                  "ok" if r.get("added") else "err")
-    except Exception as e:
-        flash(core.explain(e, 300), "err")
+            return f"Nothing to do — {r['skipped']}. Add searches in Setup."
+        return r.get("summary", "Search finished.")
+
+    if _start_job("searches", "running your saved searches", work):
+        flash("Running your saved searches now — this page updates itself.", "ok")
+    else:
+        flash(f"JARVIS is busy — {JOB['label']}.", "err")
     return redirect(url_for("approve_queue"))
 
 
@@ -3099,12 +3112,21 @@ def reject_email(lead_id):
 
 @app.post("/action/run_research")
 def run_research():
-    try:
-        r = STATE.agent.research_missing_emails(force=True, limit=5)
-        flash(f"Researcher checked {r.get('researched', 0)} businesses and found "
-              f"{r.get('found', 0)} email addresses.", "ok")
-    except Exception as e:
-        flash(str(e), "err")
+    """Looking up an address is a web search per business — a minute for a
+    batch of them. It runs in the background; the page says so and comes back
+    on its own."""
+    def work():
+        r = STATE.agent.research_missing_emails(force=True, limit=10)
+        return ("Looked up %d business%s and found %d email address%s."
+                % (r.get("researched", 0),
+                   "" if r.get("researched") == 1 else "es",
+                   r.get("found", 0), "" if r.get("found") == 1 else "es"))
+
+    if _start_job("research", "looking up email addresses", work):
+        flash("JARVIS is looking up their email addresses now. It takes a "
+              "minute or two — this page updates itself.", "ok")
+    else:
+        flash(f"JARVIS is busy — {JOB['label']}.", "err")
     return redirect(url_for("approve_queue"))
 
 
@@ -3349,30 +3371,37 @@ def _flash_result(result: dict, ok_msg: str):
         flash(result.get("error", "Something went wrong."), "err")
 
 
-# JARVIS hunting takes a minute — a dozen searches, each of them a round trip
-# to Google — so it runs in its own thread and the page watches it, rather than
-# holding a request open long enough for the browser to give up.
-HUNT = {"running": False, "area": "", "summary": ""}
-_hunt_lock = threading.Lock()
+# Anything JARVIS does that takes real time — hunting an area, looking up a
+# batch of email addresses, a full pass over the pipeline — runs here rather
+# than inside a request. A dozen searches or five web lookups is a minute or
+# two, and a page that hangs that long reads as a broken app. One job at a
+# time: they all spend the same API budget, and racing them helps nobody.
+JOB = {"running": "", "label": "", "summary": ""}
+_job_lock = threading.Lock()
 
 
-def _start_hunt(area: str) -> bool:
-    """Send JARVIS off after leads. False if he is already out."""
-    with _hunt_lock:
-        if HUNT["running"]:
+def _start_job(name: str, label: str, work) -> bool:
+    """Put JARVIS to work in the background. False if he is already busy."""
+    with _job_lock:
+        if JOB["running"]:
             return False
-        HUNT.update(running=True, area=area, summary="")
+        JOB.update(running=name, label=label, summary="")
 
     def go():
         try:
-            summary = STATE.agent.hunt(area)["summary"]
+            summary = work()
         except Exception as e:
             summary = core.explain(e, 300)
-        with _hunt_lock:
-            HUNT.update(running=False, summary=summary)
+        with _job_lock:
+            JOB.update(running="", summary=summary or "Done.")
 
-    threading.Thread(target=go, daemon=True, name="solo-studio-hunt").start()
+    threading.Thread(target=go, daemon=True, name="solo-studio-" + name).start()
     return True
+
+
+def _start_hunt(area: str) -> bool:
+    return _start_job("hunt", f"out hunting for leads near {area}",
+                      lambda: STATE.agent.hunt(area)["summary"])
 
 
 def _names_a_trade(query: str) -> bool:
@@ -3402,7 +3431,7 @@ def find_leads():
             flash(f"JARVIS is out hunting near {query}. This takes a minute — "
                   "the page updates itself when he's back.", "ok")
         else:
-            flash(f"JARVIS is already out hunting near {HUNT['area']}.", "err")
+            flash(f"JARVIS is busy — {JOB['label']}.", "err")
         return redirect(url_for("dashboard"))
 
     try:

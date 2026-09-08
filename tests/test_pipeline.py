@@ -604,13 +604,48 @@ class ApprovalQueueTest(PipelineFixture):
 
 
 class ResearcherTest(PipelineFixture):
-    """The Researcher suggests; only a human turns a suggestion into an email."""
+    """The Researcher finds addresses. It never sends to one."""
 
     def _found_lead(self):
         self.agent.find_leads("plumbers")
         return self.db.all_leads()[0]["id"]
 
-    def test_suggestion_is_not_an_email(self):
+    def _suggest_only(self):
+        self.config["auto_accept_emails"] = False
+
+    # -- doing the work itself (the default) ---------------------------------
+
+    def test_an_address_it_finds_goes_straight_onto_the_lead(self):
+        lid = self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        lead = self.db.get_lead(lid)
+        self.assertEqual(lead["email"], "found@example.com")
+        self.assertEqual(len(self.db.leads_awaiting_approval()), 1)
+
+    def test_but_nothing_is_sent_to_it(self):
+        """The line that does not move: a person still reads and approves the
+        cold email, whoever found the address."""
+        self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(self.svc.sent_emails, [])
+
+    def test_it_keeps_a_note_of_where_it_found_it(self):
+        """So the approval screen can show its working and a wrong address
+        gets caught before anything leaves."""
+        lid = self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        self.assertTrue(self.db.get_lead(lid)["email_source"])
+
+    def test_the_log_says_to_check_it(self):
+        self._found_lead()
+        self.agent.research_missing_emails(force=True)
+        details = " ".join(e["detail"] or "" for e in self.db.recent_events(20))
+        self.assertIn("Check it", details)
+
+    # -- suggest-only, for anyone who wants the second look ------------------
+
+    def test_with_auto_accept_off_it_only_suggests(self):
+        self._suggest_only()
         lid = self._found_lead()
         self.agent.research_missing_emails(force=True)
         lead = self.db.get_lead(lid)
@@ -620,6 +655,7 @@ class ResearcherTest(PipelineFixture):
         self.assertEqual(len(self.db.leads_needing_email()), 1)
 
     def test_accepting_a_suggestion_queues_the_lead(self):
+        self._suggest_only()
         lid = self._found_lead()
         self.agent.research_missing_emails(force=True)
         self.assertTrue(self.agent.accept_suggested_email(lid)["ok"])
@@ -630,6 +666,7 @@ class ResearcherTest(PipelineFixture):
         self.assertEqual(self.svc.sent_emails, [])           # still nothing sent
 
     def test_rejecting_clears_the_suggestion(self):
+        self._suggest_only()
         lid = self._found_lead()
         self.agent.research_missing_emails(force=True)
         self.agent.reject_suggested_email(lid)
@@ -663,7 +700,14 @@ class ResearcherTest(PipelineFixture):
         kinds = [e["kind"] for e in self.db.recent_events(20)]
         self.assertIn("research_failed", kinds)
 
-    def test_off_by_default(self):
+    def test_on_by_default_because_it_is_meant_to_do_the_work(self):
+        self._found_lead()
+        self.assertIsNone(self.agent.research_missing_emails().get("skipped"))
+        self.assertEqual(len(self.svc.research_calls), 1)
+        self.assertEqual(self.svc.sent_emails, [])
+
+    def test_it_can_still_be_switched_off(self):
+        self.config["auto_research_enabled"] = False
         self._found_lead()
         self.assertEqual(self.agent.research_missing_emails().get("skipped"),
                          "researcher off")

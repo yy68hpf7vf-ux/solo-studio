@@ -153,6 +153,109 @@ class HuntTest(unittest.TestCase):
         self.assertIn("hunt", kinds)
 
 
+class KeepStockedTest(unittest.TestCase):
+    """JARVIS restocking on his own — lazily, because it costs money."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-stock-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import solo_studio_agent as core
+        self.core = core
+        self.cfg = dict(core.DEFAULT_CONFIG, google_places_api_key="k",
+                        auto_search_enabled=True,
+                        territory_base="Los Angeles, CA", lead_floor=15)
+        self.agent = core.Agent(core.Database(), core.Services(self.cfg), self.cfg)
+        self.hunts = []
+        self.agent.hunt = lambda area, **kw: (self.hunts.append(area),
+                                              {"added": 3, "summary": "ok"})[1]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def stock(self, n):
+        for i in range(n):
+            self.agent.db.add_lead(place_id=f"p{i}", name=f"Biz {i}",
+                                   address="a", phone="p", category="c")
+
+    def test_an_empty_shelf_sends_him_hunting(self):
+        self.agent.keep_stocked()
+        self.assertEqual(self.hunts, ["Los Angeles, CA"])
+
+    def test_a_full_shelf_does_not(self):
+        self.stock(20)
+        r = self.agent.keep_stocked()
+        self.assertEqual(self.hunts, [])
+        self.assertIn("still waiting", r["skipped"])
+
+    def test_he_does_not_go_again_straight_away(self):
+        self.agent.keep_stocked()
+        self.agent.keep_stocked()
+        self.assertEqual(len(self.hunts), 1, "hunting costs Google calls")
+
+    def test_no_home_town_means_no_hunting(self):
+        self.cfg["territory_base"] = ""
+        self.assertIn("home town", self.agent.keep_stocked()["skipped"])
+
+    def test_switching_automatic_hunting_off_stops_him(self):
+        self.cfg["auto_search_enabled"] = False
+        self.agent.keep_stocked()
+        self.assertEqual(self.hunts, [])
+
+    def test_it_runs_as_part_of_the_normal_round(self):
+        import inspect
+        self.assertIn("keep_stocked",
+                      inspect.getsource(self.core.Agent.tick))
+
+
+class GoogleMeterTest(unittest.TestCase):
+    """Letting JARVIS work continuously is only safe if something says no on
+    the owner's behalf."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-meter-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import solo_studio_agent as core
+        self.core = core
+        self.cfg = dict(core.DEFAULT_CONFIG, google_places_api_key="k",
+                        monthly_google_cap=3)
+        self.svc = core.Services(self.cfg)
+        self.agent = core.Agent(core.Database(), self.svc, self.cfg)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def _one_page(self):
+        return type("R", (), {"status_code": 200,
+                              "json": lambda self: {"places": []}})()
+
+    def test_every_google_call_is_counted(self):
+        with mock.patch.object(self.core.requests, "post",
+                               return_value=self._one_page()):
+            self.svc.places_search_no_website("roofers in LA")
+            self.svc.places_search_no_website("plumbers in LA")
+        self.assertEqual(self.agent.google_calls_this_month(), 2)
+
+    def test_it_refuses_once_the_cap_is_reached(self):
+        with mock.patch.object(self.core.requests, "post",
+                               return_value=self._one_page()):
+            for _ in range(3):
+                self.svc.places_search_no_website("q")
+            with self.assertRaises(self.core.ServiceError) as caught:
+                self.svc.places_search_no_website("one too many")
+        self.assertIn("cap", str(caught.exception))
+
+    def test_the_default_cap_sits_under_googles_free_allowance(self):
+        self.assertLess(self.core.DEFAULT_CONFIG["monthly_google_cap"],
+                        self.core.GOOGLE_FREE_CALLS_MONTH)
+
+    def test_the_count_is_per_month(self):
+        key = self.core._google_meter_key()
+        self.assertIn(__import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).strftime("%Y-%m"), key)
+
+
 class WhatCountsAsATradeTest(unittest.TestCase):
     """A bare place name is the trap. It has to be recognised as one."""
 
@@ -198,7 +301,7 @@ class TheSearchBoxTest(unittest.TestCase):
         cfg["google_places_api_key"] = "k"
         core.save_config(cfg)
         dash.STATE.reload()
-        dash.HUNT.update(running=False, area="", summary="")
+        dash.JOB.update(running="", label="", summary="")
         self.client = dash.app.test_client()
         self.hunted = []
         self.real = dash._start_hunt

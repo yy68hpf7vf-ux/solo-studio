@@ -224,6 +224,16 @@ def line_for_today(today: date | None = None) -> dict:
 # Trades where a lot of businesses still have no website. Restaurants, salons
 # and gyms are deliberately absent — nearly all of them have one, so searching
 # for them burns Google calls to find nobody.
+# Google Text Search: 5,000 calls a month free, then roughly $32 per thousand.
+# The cap sits under the free line on purpose.
+GOOGLE_FREE_CALLS_MONTH = 5000
+GOOGLE_CALL_CAP = 4500
+
+
+def _google_meter_key() -> str:
+    return "google_calls_" + datetime.now(timezone.utc).strftime("%Y-%m")
+
+
 DEFAULT_TRADES = [
     "plumbers", "electricians", "landscapers", "tree service", "roofers",
     "handyman", "house cleaning", "towing", "junk removal", "septic service",
@@ -356,8 +366,16 @@ DEFAULT_CONFIG = {
     # Automatic prospecting: the agent runs these searches on a schedule and
     # queues what it finds for your approval. It never emails anyone on its own.
     "auto_search_enabled": False,
-    "auto_research_enabled": False,   # let the Researcher hunt missing emails
+    "auto_research_enabled": True,    # let the Researcher hunt missing emails
     "research_per_tick": 3,           # how many leads to research each round
+    # An address the Researcher found goes straight onto the lead instead of
+    # queueing for a second click. It changes nothing about sending: the cold
+    # email itself is still read and approved by a person, with that address
+    # shown, so a wrong one is caught before anything leaves.
+    "auto_accept_emails": True,
+    "lead_floor": 15,                 # hunt when fewer than this are waiting
+    "hunt_interval_hours": 6,         # and no more often than this
+    "monthly_google_cap": GOOGLE_CALL_CAP,
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
     # 20 searches x 3 pages, twice a day, is ~3,600 Google calls a month —
@@ -431,6 +449,7 @@ CREATE TABLE IF NOT EXISTS leads (
     stripe_session_id TEXT,
     stripe_session_url TEXT,
     amount_cents INTEGER,
+    email_source TEXT,     -- where JARVIS found the address, when he did
     suggested_email TEXT,
     suggested_email_source TEXT,
     suggested_email_note TEXT,
@@ -496,6 +515,7 @@ class Database:
         for col, decl in (("last_called_at", "TEXT"),
                           ("social_url", "TEXT"),
                           ("amount_cents", "INTEGER"),
+                          ("email_source", "TEXT"),
                           ("suggested_email", "TEXT"),
                           ("suggested_email_source", "TEXT"),
                           ("suggested_email_note", "TEXT"),
@@ -717,6 +737,19 @@ class Database:
         row = self._conn().execute(
             "SELECT value FROM kv WHERE key=?", (key,)).fetchone()
         return row["value"] if row else default
+
+    def bump_kv(self, key: str, by: int = 1) -> int:
+        """Add to a counter and return the new total."""
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO kv (key, value) VALUES (?,?)"
+                " ON CONFLICT(key) DO UPDATE SET"
+                " value = CAST(CAST(kv.value AS INTEGER) + ? AS TEXT)",
+                (key, str(by), by))
+        try:
+            return int(self.get_kv(key) or 0)
+        except ValueError:
+            return 0
 
     def set_kv(self, key: str, value: str) -> None:
         with self._conn() as c:
@@ -1111,11 +1144,14 @@ def checkup(db, cfg, key_fields=API_KEYS, extra=()) -> list[dict]:
 
 
 class Services:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, meter=None):
         self.config = config
         self._inkbox = None
         self._identity = None
         self._anthropic = None
+        # Called once per billable Google call. It may refuse, which is the
+        # only thing standing between "JARVIS does everything" and a bill.
+        self.meter = meter
 
     # -- Google Places (New) ----------------------------------------------
 
@@ -1149,6 +1185,8 @@ class Services:
             body: dict = {"textQuery": query, "pageSize": 20}
             if page_token:
                 body["pageToken"] = page_token
+            if self.meter:
+                self.meter()
             resp = requests.post(url, headers=headers, json=body, timeout=30)
             if resp.status_code != 200:
                 raise ServiceError(
@@ -1740,6 +1778,35 @@ class Agent:
         self.db = db
         self.services = services
         self.config = config
+        if hasattr(services, "meter"):
+            services.meter = self._spend_google_call
+
+    # -- the money tap -------------------------------------------------------
+
+    def google_calls_this_month(self) -> int:
+        try:
+            return int(self.db.get_kv(_google_meter_key()) or 0)
+        except ValueError:
+            return 0
+
+    def _spend_google_call(self) -> None:
+        """Count a billable Google call, and refuse once the month's cap is hit.
+
+        Google gives 5,000 Text Search calls a month free and charges about
+        $32 per thousand after that. Letting JARVIS work continuously is only
+        safe if something says no on the owner's behalf, so this does — the
+        default cap sits under the free allowance, and it is the same counter
+        whether the calls came from a hunt, a saved search, or a button.
+        """
+        cap = int(self.config.get("monthly_google_cap", GOOGLE_CALL_CAP)
+                  or GOOGLE_CALL_CAP)
+        if self.google_calls_this_month() >= cap:
+            raise ServiceError(
+                "That's %d Google searches this month, which is the cap you're "
+                "set to (the free allowance is %d). It resets on the 1st, or "
+                "raise the cap in Setup — past the free ones Google charges "
+                "about $32 per thousand." % (cap, GOOGLE_FREE_CALLS_MONTH))
+        self.db.bump_kv(_google_meter_key())
 
     def _notify(self, title: str, message: str, priority: str = "default",
                 tags: str = "") -> None:
@@ -2208,11 +2275,13 @@ class Agent:
 
     # -- manual actions (dashboard buttons) --------------------------------
 
-    def set_email(self, lead_id: int, email: str) -> dict:
+    def set_email(self, lead_id: int, email: str, source: str = None) -> dict:
+        """Put an address on a lead. `source` records where it came from when
+        JARVIS found it, so the approval screen can show its working."""
         email = (email or "").strip()
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             return {"ok": False, "error": "That doesn't look like an email address."}
-        self.db.update_lead(lead_id, email=email)
+        self.db.update_lead(lead_id, email=email, email_source=(source or None))
         self.db.log(lead_id, "email_set", f"Email set to {email}")
         return {"ok": True}
 
@@ -2451,9 +2520,19 @@ class Agent:
                     lead["id"], suggested_email=result["email"],
                     suggested_email_source=(result.get("source") or "")[:300],
                     suggested_email_note=(result.get("note") or "")[:300])
-                self.db.log(lead["id"], "email_suggested",
-                            f"Researcher found {result['email']} for "
-                            f"{lead['name']} — needs your OK.")
+                if self.config.get("auto_accept_emails", True):
+                    # Straight onto the lead. The cold email to it is still
+                    # read and approved by a person, with the address and
+                    # where it came from both on screen.
+                    self.accept_suggested_email(lead["id"])
+                    self.db.log(lead["id"], "email_found",
+                                f"Found {result['email']} for {lead['name']} "
+                                f"({(result.get('source') or 'no source')[:120]}). "
+                                "Check it on the Approve page before sending.")
+                else:
+                    self.db.log(lead["id"], "email_suggested",
+                                f"Researcher found {result['email']} for "
+                                f"{lead['name']} — needs your OK.")
                 found += 1
             else:
                 self.db.log(lead["id"], "email_not_found",
@@ -2472,7 +2551,8 @@ class Agent:
             return {"ok": False, "error": "No such lead."}
         if not lead["suggested_email"]:
             return {"ok": False, "error": "No suggestion to accept."}
-        result = self.set_email(lead_id, lead["suggested_email"])
+        result = self.set_email(lead_id, lead["suggested_email"],
+                                source=lead["suggested_email_source"])
         if result.get("ok"):
             self.db.update_lead(lead_id, suggested_email=None,
                                 suggested_email_source=None,
@@ -2504,7 +2584,35 @@ class Agent:
         self.poll_payments()
         self.tick_transients()
         self.run_saved_searches()
+        self.keep_stocked()
         self.research_missing_emails()
+
+    def keep_stocked(self) -> dict:
+        """Go and find leads before being asked, when the shelf runs low.
+
+        Hunting costs Google calls, so this is deliberately lazy: only when
+        there are few uncontacted leads left, only when a home town is set,
+        and never more often than the interval. The meter above is the hard
+        stop; this is the polite one.
+        """
+        cfg = self.config
+        if not cfg.get("auto_search_enabled"):
+            return {"skipped": "automatic hunting off"}
+        area = (cfg.get("territory_base") or "").strip()
+        if not area:
+            return {"skipped": "no home town set"}
+
+        floor = max(1, int(cfg.get("lead_floor", 15) or 15))
+        waiting = len(self.db.leads_by_stage(STAGE_FOUND))
+        if waiting >= floor:
+            return {"skipped": f"{waiting} leads still waiting"}
+
+        hours = max(1, int(cfg.get("hunt_interval_hours", 6) or 6))
+        last = self.db.get_kv("last_hunt")
+        if last and _age_minutes(last) < hours * 60:
+            return {"skipped": "hunted recently"}
+        self.db.set_kv("last_hunt", _now())
+        return self.hunt(area, want=max(8, floor - waiting))
 
     def watch(self) -> list[dict]:
         """Look the whole app over and push for anything newly broken.
