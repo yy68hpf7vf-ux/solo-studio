@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import re
 import sqlite3
@@ -380,8 +381,12 @@ DEFAULT_CONFIG = {
     # at all, "broken" adds dead links, parked domains and social-only pages,
     # "weak" adds sites that are http-only or unusable on a phone.
     "lead_quality": "broken",
-    "lead_floor": 15,                 # hunt when fewer than this are waiting
-    "hunt_interval_hours": 6,         # and no more often than this
+    # How many uncontacted leads to bank before the crawl rests. It sweeps the
+    # map on its own until it gets there — no typing, no buttons.
+    "lead_target": 1000,
+    "tiles_per_tick": 3,              # spots on the map swept each round
+    "lead_floor": 15,                 # go round the map again below this
+    "hunt_interval_hours": 6,         # for the older top-up hunt
     "monthly_google_cap": GOOGLE_CALL_CAP,
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
@@ -1019,6 +1024,23 @@ def _yelp_row(b: dict) -> dict | None:
         "category": cats or None,
         "social_url": b.get("url") or "https://yelp.com",
     }
+
+
+def _town_of(address: str) -> str:
+    """The town out of a postal address, for when no home town was set.
+
+    "12 Main St, Ellenville, NY 12428" -> "Ellenville, NY". Rough on purpose:
+    it only has to be good enough to look up on a map, and anything it gets
+    wrong the owner can correct on Setup.
+    """
+    parts = [p.strip() for p in (address or "").split(",") if p.strip()]
+    if len(parts) < 2:
+        return ""
+    town = parts[-2]
+    state = parts[-1].split()[0] if parts[-1].split() else ""
+    if len(state) == 2 and state.isalpha():
+        return f"{town}, {state.upper()}"
+    return town
 
 
 def _domain_of(url: str) -> str:
@@ -2815,16 +2837,22 @@ class Agent:
         best known), and OpenStreetMap (free, no key, a different map of the
         world altogether). Either one being down must not stop the other.
         """
-        added = seen = 0
-        notes = []
         point = None
         try:
             point = self.town_centre(town)
         except Exception as e:
-            notes.append(f"couldn't place {town}: {explain(e, 90)}")
+            return {"added": 0, "seen": 0,
+                    "notes": [f"couldn't place {town}: {explain(e, 90)}"]}
         if not point:
-            return {"added": 0, "seen": 0, "notes": notes or ["no location"]}
-        lat, lng = point
+            return {"added": 0, "seen": 0, "notes": ["no location"]}
+        return self.sweep_point(town, point[0], point[1], radius)
+
+    def sweep_point(self, label: str, lat: float, lng: float,
+                    radius: int = 2500) -> dict:
+        """Every index we have, at one spot on the map."""
+        added = seen = 0
+        notes = []
+        town = label
 
         sources = [
             ("Google by distance",
@@ -2856,6 +2884,135 @@ class Agent:
                         f"{label} around {town}: {getattr(found, 'seen', 0)} "
                         f"businesses, {len(found)} worth pitching, {new} new.")
         return {"added": added, "seen": seen, "notes": notes}
+
+    # -- crawling the whole map, without being asked -------------------------
+
+    # A tile is one spot on the map with a radius round it. Google returns the
+    # 20 nearest businesses to a point and nothing more, so covering a town
+    # means several points, not one. ~2.2km apart with a 1.8km radius overlaps
+    # slightly, which is what you want — gaps are missed businesses.
+    TILE_STEP_DEG = 0.02
+    TILE_RADIUS = 1800
+    TILE_GRID = 3            # 3x3 points per town
+
+    def _tiles_for(self, town: str, lat: float, lng: float) -> list[list]:
+        span = range(-(self.TILE_GRID // 2), self.TILE_GRID // 2 + 1)
+        # a degree of longitude shrinks towards the poles; a degree of latitude
+        # doesn't, so the east-west step has to be widened to keep tiles square
+        shrink = max(0.2, math.cos(math.radians(lat)))
+        return [[town, round(lat + i * self.TILE_STEP_DEG, 6),
+                 round(lng + j * self.TILE_STEP_DEG / shrink, 6)]
+                for i in span for j in span]
+
+    def crawl_plan(self) -> list[list]:
+        """Every spot on the map worth visiting, worked out once.
+
+        Built from the towns around home and kept in the database, so the
+        crawl picks up exactly where it left off across restarts.
+        """
+        cfg = self.config
+        # Their home town if they set one; otherwise the postal address they
+        # already had to give for the emails. Either way, no extra typing.
+        area = ((cfg.get("territory_base") or "").strip()
+                or _town_of(cfg.get("mailing_address")))
+        if not area:
+            return []
+        miles = int(cfg.get("territory_miles", 30) or 30)
+        signature = f"{area}|{miles}|{self.TILE_GRID}|{self.TILE_STEP_DEG}"
+        if self.db.get_kv("crawl_signature") == signature:
+            try:
+                return json.loads(self.db.get_kv("crawl_plan") or "[]")
+            except ValueError:
+                pass
+
+        try:
+            towns = self.services.towns_near(area, miles)
+        except Exception as e:
+            self.db.log(None, "crawl_note",
+                        f"Couldn't list the towns near {area} "
+                        f"({explain(e, 150)}) — crawling {area} itself.")
+            towns = []
+        if area not in towns:
+            towns.append(area)
+
+        plan = []
+        for town in towns:
+            try:
+                point = self.town_centre(town)
+            except Exception as e:
+                self.db.log(None, "crawl_note",
+                            f"Couldn't place {town}: {explain(e, 120)}")
+                continue
+            if point:
+                plan.extend(self._tiles_for(town, point[0], point[1]))
+        # Neighbouring towns overlap, and two names can resolve to the same
+        # spot. Sweeping the same ground twice finds nothing and still costs a
+        # call, so keep one tile per point.
+        seen_points = set()
+        unique = []
+        for town, lat, lng in plan:
+            here = (lat, lng)
+            if here in seen_points:
+                continue
+            seen_points.add(here)
+            unique.append([town, lat, lng])
+        plan = unique
+        self.db.set_kv("crawl_plan", json.dumps(plan))
+        self.db.set_kv("crawl_signature", signature)
+        self.db.set_kv("crawl_cursor", "0")
+        self.db.log(None, "crawl_note",
+                    f"Mapped {len(towns)} towns around {area} into "
+                    f"{len(plan)} areas to sweep.")
+        return plan
+
+    def crawl(self) -> dict:
+        """Work steadily across the map, a few spots per round, on its own.
+
+        This is the difference between an app that tops itself up to fifteen
+        leads and one that goes and covers the county. It stops when the map
+        is covered, and starts again only if the leads run down — sweeping the
+        same ground twice finds nothing and still costs money.
+        """
+        cfg = self.config
+        if not cfg.get("auto_search_enabled"):
+            return {"skipped": "automatic hunting off"}
+
+        waiting = len(self.db.leads_by_stage(STAGE_FOUND))
+        target = max(1, int(cfg.get("lead_target", 1000) or 1000))
+        if waiting >= target:
+            return {"skipped": f"{waiting} leads banked, which is the target"}
+
+        plan = self.crawl_plan()
+        if not plan:
+            return {"skipped": "no home town set"}
+
+        try:
+            cursor = int(self.db.get_kv("crawl_cursor") or 0)
+        except (TypeError, ValueError):
+            cursor = 0
+        if cursor >= len(plan):
+            floor = max(1, int(cfg.get("lead_floor", 15) or 15))
+            if waiting >= floor:
+                return {"skipped": "whole map covered", "done": True}
+            cursor = 0          # round again: the leads have run down
+
+        per_tick = max(1, int(cfg.get("tiles_per_tick", 3) or 3))
+        added = 0
+        done = 0
+        for town, lat, lng in plan[cursor:cursor + per_tick]:
+            try:
+                added += self.sweep_point(town, lat, lng,
+                                          radius=self.TILE_RADIUS)["added"]
+            except Exception as e:
+                self.db.log(None, "crawl_failed", explain(e, 250))
+            done += 1
+        cursor += done
+        self.db.set_kv("crawl_cursor", str(cursor))
+        if added:
+            self.db.log(None, "crawl",
+                        f"Swept {done} more areas ({cursor} of {len(plan)}) — "
+                        f"{added} new leads.")
+        return {"added": added, "at": cursor, "of": len(plan)}
 
     # -- the hunt ----------------------------------------------------------
 
@@ -3135,7 +3292,7 @@ class Agent:
         self.poll_payments()
         self.tick_transients()
         self.run_saved_searches()
-        self.keep_stocked()
+        self.crawl()
         self.research_missing_emails()
 
     def keep_stocked(self) -> dict:

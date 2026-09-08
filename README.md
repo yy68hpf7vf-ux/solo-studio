@@ -96,9 +96,21 @@ it, which beats guessing. Where there is no website at all there is no domain
 to look up, so Claude's web search reads their Facebook page or directory
 listing instead.
 
+**He crawls the map on his own.** No typing, no buttons. He works out the towns
+around home, breaks each one into a grid of spots — Google returns the twenty
+businesses nearest a point and nothing more, so one point per town is one
+street corner per town — and sweeps a few spots every couple of minutes while
+the app is open. The Dashboard shows how far round he's got.
+
+He stops when he has enough banked (1,000 by default, on Setup) or when the map
+is covered, and starts again if the pile runs down. Sweeping the same ground
+twice finds nothing and still costs a search.
+
+**No home town needed.** If you haven't set one he uses the postal address you
+already gave for the emails. "Without typing anything" means exactly that.
+
 **He starts on launch.** Opening the app puts him to work: check what needs
-you, restock if leads are low, look up missing addresses. All of it is lazy —
-open the app twice in a row and the second costs nothing.
+you, crawl if there's map left, look up missing addresses.
 
 **JARVIS opens the websites.** Google only tells you whether a business has a
 link. Plenty of those links are dead, parked, or a Facebook page. So he fetches

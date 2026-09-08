@@ -202,9 +202,11 @@ class KeepStockedTest(unittest.TestCase):
         self.agent.keep_stocked()
         self.assertEqual(self.hunts, [])
 
-    def test_it_runs_as_part_of_the_normal_round(self):
+    def test_the_crawl_is_what_runs_every_round_now(self):
+        """Topping up to fifteen leads was the cap. The crawl covers the map
+        instead, so this is the one that has to be in the round."""
         import inspect
-        self.assertIn("keep_stocked",
+        self.assertIn("self.crawl()",
                       inspect.getsource(self.core.Agent.tick))
 
 
@@ -337,3 +339,164 @@ class TheSearchBoxTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class CrawlTest(unittest.TestCase):
+    """Covering the map on its own.
+
+    The complaint this answers: "I want it to find automatically without me
+    typing anything — I should have 1000, not 93." Ninety-three was the old
+    rule doing exactly what it said: topping up to fifteen and sleeping.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-crawl-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import solo_studio_agent as core
+        self.core = core
+        self.cfg = dict(core.DEFAULT_CONFIG, google_places_api_key="k",
+                        auto_search_enabled=True,
+                        territory_base="Los Angeles, CA", tiles_per_tick=2)
+        self.agent = core.Agent(core.Database(), core.Services(self.cfg),
+                                self.cfg)
+        self.agent.services.towns_near = lambda base, miles: ["A, CA", "B, CA"]
+        self.agent.services.places_geocode = lambda area: (33.9, -118.3)
+        self.swept = []
+        self.agent.sweep_point = lambda label, lat, lng, radius=0: (
+            self.swept.append((label, lat, lng)), {"added": 1, "seen": 5})[1]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    # -- the plan ------------------------------------------------------------
+
+    def test_a_town_becomes_several_spots_not_one(self):
+        """Google returns the 20 nearest to a point and nothing more, so one
+        point per town is one street corner per town. Two towns plus the home
+        town itself, nine spots each."""
+        self.agent.services.places_geocode = lambda area: {
+            "A, CA": (33.9, -118.3), "B, CA": (34.2, -118.0)}.get(
+                area, (33.0, -117.0))
+        self.assertEqual(len(self.agent.crawl_plan()),
+                         3 * self.agent.TILE_GRID ** 2)
+
+    def test_every_spot_is_somewhere_different(self):
+        """Neighbouring towns overlap and two names can land on the same
+        point. Sweeping the same ground twice costs a call and finds nothing."""
+        plan = self.agent.crawl_plan()          # all three geocode alike here
+        points = {(lat, lng) for _, lat, lng in plan}
+        self.assertEqual(len(points), len(plan))
+        self.assertEqual(len(plan), self.agent.TILE_GRID ** 2)
+
+    def test_the_plan_is_worked_out_once_and_remembered(self):
+        asked = []
+        self.agent.services.towns_near = lambda base, miles: (
+            asked.append(base), ["A, CA"])[1]
+        self.agent.crawl_plan()
+        self.agent.crawl_plan()
+        self.assertEqual(len(asked), 1)
+
+    def test_changing_the_territory_rebuilds_it(self):
+        """Moving the home town must not leave it crawling the old county."""
+        asked = []
+        self.agent.services.towns_near = lambda base, miles: (
+            asked.append(base), ["A, CA"])[1]
+        self.agent.crawl_plan()
+        self.cfg["territory_base"] = "Atlanta, GA"
+        self.agent.crawl_plan()
+        self.assertEqual(asked, ["Los Angeles, CA", "Atlanta, GA"])
+        self.assertEqual(int(self.agent.db.get_kv("crawl_cursor")), 0)
+
+    def test_with_no_home_town_it_uses_the_address_they_already_gave(self):
+        """"Without me typing anything" has to mean exactly that."""
+        self.cfg["territory_base"] = ""
+        self.cfg["mailing_address"] = "12 Main St, Ellenville, NY 12428"
+        asked = []
+        self.agent.services.towns_near = lambda base, miles: (
+            asked.append(base), ["Ellenville, NY"])[1]
+        self.assertTrue(self.agent.crawl_plan())
+        self.assertEqual(asked, ["Ellenville, NY"])
+
+    def test_no_town_and_no_address_does_nothing_rather_than_guessing(self):
+        self.cfg["territory_base"] = ""
+        self.cfg["mailing_address"] = ""
+        self.assertEqual(self.agent.crawl_plan(), [])
+        self.assertIn("home town", self.agent.crawl()["skipped"])
+
+    def test_it_carries_on_without_the_town_list(self):
+        """Out of Claude credit must not stop the crawl."""
+        self.cfg["territory_base"] = "Los Angeles, CA"
+
+        def boom(base, miles):
+            raise self.core.ServiceError("$0 of API credit")
+        self.agent.services.towns_near = boom
+        self.assertEqual(len(self.agent.crawl_plan()),
+                         self.agent.TILE_GRID ** 2)
+
+    # -- the crawl -----------------------------------------------------------
+
+    def test_it_moves_on_rather_than_sweeping_the_same_spot(self):
+        self.agent.crawl()
+        self.agent.crawl()
+        self.assertEqual(len(self.swept), 4)
+        self.assertEqual(len(set(self.swept)), 4)
+
+    def test_it_picks_up_where_it_left_off_after_a_restart(self):
+        self.agent.crawl()
+        fresh = self.core.Agent(self.core.Database(),
+                                self.core.Services(self.cfg), self.cfg)
+        fresh.services.towns_near = self.agent.services.towns_near
+        fresh.services.places_geocode = self.agent.services.places_geocode
+        seen = []
+        fresh.sweep_point = lambda label, lat, lng, radius=0: (
+            seen.append((label, lat, lng)), {"added": 0, "seen": 0})[1]
+        fresh.crawl()
+        self.assertFalse(set(seen) & set(self.swept), "it must not start over")
+
+    def test_it_stops_once_the_map_is_covered(self):
+        for i in range(20):                      # enough leads banked to rest
+            self.agent.db.add_lead(place_id=f"q{i}", name=f"Biz {i}",
+                                   address="a", phone="p", category="c")
+        for _ in range(20):
+            self.agent.crawl()
+        before = len(self.swept)
+        r = self.agent.crawl()
+        self.assertEqual(len(self.swept), before)
+        self.assertIn("covered", r["skipped"])
+
+    def test_but_it_goes_round_again_once_the_leads_run_down(self):
+        for _ in range(20):
+            self.agent.crawl()                   # no leads banked: keep going
+        before = len(self.swept)
+        self.agent.crawl()
+        self.assertGreater(len(self.swept), before)
+
+    def test_it_stops_at_the_target_rather_than_hoarding(self):
+        self.cfg["lead_target"] = 3
+        for i in range(4):
+            self.agent.db.add_lead(place_id=f"p{i}", name=f"Biz {i}",
+                                   address="a", phone="p", category="c")
+        self.assertIn("target", self.agent.crawl()["skipped"])
+        self.assertEqual(self.swept, [])
+
+    def test_switching_automatic_hunting_off_stops_it(self):
+        self.cfg["auto_search_enabled"] = False
+        self.agent.crawl()
+        self.assertEqual(self.swept, [])
+
+    def test_a_failing_spot_does_not_stop_the_crawl(self):
+        calls = []
+
+        def flaky(label, lat, lng, radius=0):
+            calls.append(label)
+            if len(calls) == 1:
+                raise self.core.ServiceError("Google said no")
+            return {"added": 1, "seen": 5}
+        self.agent.sweep_point = flaky
+        self.agent.crawl()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(int(self.agent.db.get_kv("crawl_cursor")), 2)
+
+    def test_the_target_is_high_enough_to_be_worth_having(self):
+        self.assertGreaterEqual(self.core.DEFAULT_CONFIG["lead_target"], 500)

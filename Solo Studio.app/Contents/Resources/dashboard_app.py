@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hmac
+import json
 import os
 import py_compile
 import re
@@ -247,7 +248,7 @@ def _autopilot_loop():
         time.sleep(2)                  # let the server finish binding
         STATE.agent.watch()
         if STATE.config.get("autopilot_enabled"):
-            STATE.agent.keep_stocked()
+            STATE.agent.crawl()
             STATE.agent.research_missing_emails()
     except Exception as e:
         try:
@@ -933,6 +934,14 @@ postal address on commercial email.</p>
   placeholder="plumbers in Riverside, CA&#10;barber shops in Riverside, CA&#10;landscapers in Corona, CA">{{ config.saved_searches }}</textarea>
 </div>
 <div>
+<label>How many leads to bank</label>
+<input type="number" name="lead_target" min="10" max="20000"
+  value="{{ config.lead_target or 1000 }}">
+<p class="muted">JARVIS sweeps the map around your town on his own — a few
+spots every couple of minutes, no typing — until he has this many waiting.
+Then he stops, because sweeping the same ground twice finds nothing and still
+costs a search. He starts again if the pile runs down.</p>
+
 <label>How wide to cast the net</label>
 <select name="lead_quality">
   <option value="none" {% if config.lead_quality == 'none' %}selected{% endif %}>
@@ -3216,10 +3225,32 @@ appear.</p>
 """
 
 
+def _crawl_progress() -> dict:
+    """How far round the map JARVIS has got."""
+    db = STATE.db
+    try:
+        plan = json.loads(db.get_kv("crawl_plan") or "[]")
+        at = int(db.get_kv("crawl_cursor") or 0)
+    except (TypeError, ValueError):
+        return {}
+    if not plan:
+        return {}
+    return {"at": min(at, len(plan)), "of": len(plan),
+            "pct": min(100, round(100 * at / len(plan)))}
+
+
 def current_findings() -> list[dict]:
     """What JARVIS has noticed right now, including the things only the app
     itself knows — an update sitting on disk, for one."""
     extra = []
+    crawl = _crawl_progress()
+    if crawl and crawl["at"] < crawl["of"]:
+        extra.append(core.finding(
+            "crawling", core.WATCH,
+            "JARVIS is working through the map",
+            "Area %d of %d swept (%d%%). He keeps going on his own while the "
+            "app is open." % (crawl["at"], crawl["of"], crawl["pct"]),
+            "/activity", "Watch"))
     if not CLOUD_MODE and _restart_pending():
         extra.append(core.finding(
             "restart-pending", core.WATCH, "An update is installed but not running",
@@ -3866,7 +3897,9 @@ def setup():
             cfg["lead_quality"] = quality
         if "saved_searches" in request.form:
             cfg["saved_searches"] = request.form.get("saved_searches", "")
-        for field, lo, hi in (("search_interval_hours", 1, 168),
+        for field, lo, hi in (("lead_target", 10, 20000),
+                              ("tiles_per_tick", 1, 20),
+                              ("search_interval_hours", 1, 168),
                               ("searches_per_run", 1, 60),
                               ("daily_send_cap", 1, 200)):
             try:
