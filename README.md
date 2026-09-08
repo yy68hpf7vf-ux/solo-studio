@@ -74,6 +74,32 @@ left. Work down the list in order:
 | 4 | Stripe | 3 min | Takes the payment |
 | 5 | Google Places | 10 min | Finds businesses with no website |
 
+**Four places he looks.** Google's text search ranks by prominence, which is
+almost a definition of "has a website" — so it is now the least of what he uses.
+
+| Source | What it adds | Cost |
+|---|---|---|
+| **Google, by distance** | The businesses *nearest* a point rather than the best known — the one-van operation on the side street, which is the actual market. | Your existing key, metered |
+| **OpenStreetMap** | A completely separate map of the world. No key, no limits worth worrying about, and full of small businesses with a phone number and no website. | Free |
+| **Yelp** *(optional)* | A fourth index, for coverage the others miss. | Free tier |
+| **Google, by text** | "Plumbers in Ellenville" — still useful in small towns. | Your existing key, metered |
+
+Each source fails on its own: OpenStreetMap being busy doesn't stop Google, and
+Google being down doesn't stop OpenStreetMap. One honest caveat — Yelp's search
+returns a business's *Yelp page*, never its own website, so those leads are
+marked as a directory page only and are a weaker signal than the rest, where
+the real site got checked.
+
+**Finding the email.** Two ways, picked automatically. Where the business has a
+domain — a dead or parked site — **Hunter** *(optional)* looks up addresses on
+it, which beats guessing. Where there is no website at all there is no domain
+to look up, so Claude's web search reads their Facebook page or directory
+listing instead.
+
+**He starts on launch.** Opening the app puts him to work: check what needs
+you, restock if leads are low, look up missing addresses. All of it is lazy —
+open the app twice in a row and the second costs nothing.
+
 **JARVIS opens the websites.** Google only tells you whether a business has a
 link. Plenty of those links are dead, parked, or a Facebook page. So he fetches
 each one and looks: does it load, is there anything on it, is it https, is it

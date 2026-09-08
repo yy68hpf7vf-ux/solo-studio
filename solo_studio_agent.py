@@ -340,6 +340,9 @@ DEFAULT_CONFIG = {
     "anthropic_api_key": "",
     "anthropic_model": "claude-opus-5",
     "netlify_api_key": "",
+    # Optional extras. Everything works without them; each one widens the net.
+    "yelp_api_key": "",       # a fourth index of local businesses
+    "hunter_api_key": "",     # addresses behind a domain we already know
     "stripe_secret_key": "",
     # Business / outreach settings.
     "your_name": "",
@@ -982,6 +985,84 @@ def check_website(url: str, timeout: int = SITE_TIMEOUT) -> tuple[str, str]:
         resp.close()
 
 
+def _place_row(p: dict) -> dict:
+    """One Google place, in the shape a lead is stored in."""
+    kind = p.get("primaryTypeDisplayName")
+    return {
+        "place_id": p.get("id"),
+        "name": (p.get("displayName") or {}).get("text", "Unknown"),
+        "address": p.get("formattedAddress"),
+        "phone": p.get("nationalPhoneNumber"),
+        "category": kind.get("text") if isinstance(kind, dict) else kind,
+        "social_url": p.get("websiteUri") or None,
+    }
+
+
+def _yelp_row(b: dict) -> dict | None:
+    """One Yelp business, in the shape a lead is stored in.
+
+    The url is their Yelp page, not their website — which is exactly why it
+    lands in the "only a social/directory page" class.
+    """
+    name = (b.get("name") or "").strip()
+    if not name or b.get("is_closed"):
+        return None
+    loc = b.get("location") or {}
+    address = ", ".join(x for x in (loc.get("display_address") or []) if x)
+    cats = ", ".join(c.get("title", "") for c in (b.get("categories") or [])
+                     if c.get("title"))
+    return {
+        "place_id": "yelp:" + str(b.get("id") or name),
+        "name": name,
+        "address": address or None,
+        "phone": b.get("display_phone") or b.get("phone") or None,
+        "category": cats or None,
+        "social_url": b.get("url") or "https://yelp.com",
+    }
+
+
+def _domain_of(url: str) -> str:
+    """The bare domain of a real website, or "" for a social page or nothing.
+
+    A Facebook page has no domain of the business's own, so there is nothing
+    for a domain-search to look up.
+    """
+    if not url or social_platform(url):
+        return ""
+    host = urlsplit(url if "//" in url else "//" + url).netloc.lower()
+    host = host.split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def _osm_row(el: dict) -> dict | None:
+    """One OpenStreetMap element, in the shape a lead is stored in.
+
+    Skips anything without a name — an unnamed point on a map is not a
+    business anyone can be written to.
+    """
+    tags = el.get("tags") or {}
+    name = (tags.get("name") or "").strip()
+    if not name:
+        return None
+    street = " ".join(x for x in (tags.get("addr:housenumber"),
+                                  tags.get("addr:street")) if x)
+    town = " ".join(x for x in (tags.get("addr:city"), tags.get("addr:state"),
+                                tags.get("addr:postcode")) if x)
+    address = ", ".join(x for x in (street, town) if x)
+    trade = (tags.get("shop") or tags.get("craft") or tags.get("office")
+             or tags.get("amenity") or "")
+    return {
+        "place_id": "osm:%s/%s" % (el.get("type"), el.get("id")),
+        "name": name,
+        "address": address or None,
+        "phone": (tags.get("phone") or tags.get("contact:phone")
+                  or tags.get("contact:mobile") or None),
+        "category": trade.replace("_", " ").title() or None,
+        "social_url": (tags.get("website") or tags.get("contact:website")
+                       or tags.get("contact:facebook") or None),
+    }
+
+
 class SearchResults(list):
     """Leads found, plus what was passed over on the way there.
 
@@ -1305,10 +1386,16 @@ class Services:
             if not page_token or len(raw) >= max_results:
                 break
 
-        # Now look at the websites themselves. Google only says whether a link
-        # exists; plenty of those links are dead, parked, or a Facebook page.
-        # Checking costs nothing but a web request, and it is what turns "they
-        # all have websites" into a list of people worth calling.
+        return self._triage(raw, results, max_results)
+
+    def _triage(self, raw: list[dict], results: "SearchResults",
+                max_results: int) -> "SearchResults":
+        """Look at every website and keep the businesses worth pitching.
+
+        Every source — Google's text search, Google by distance, OpenStreetMap
+        — comes through here, so a lead means the same thing whichever index
+        it was found in.
+        """
         keep = QUALITY_LEVELS.get(
             self.config.get("lead_quality", "broken"), QUALITY_LEVELS["broken"])
         for lead, (status, note) in zip(raw, self._check_sites(raw)):
@@ -1323,6 +1410,247 @@ class Services:
             results.append(lead)
         del results[max_results:]
         return results
+
+    # -- Google, by distance rather than fame --------------------------------
+
+    def places_geocode(self, area: str) -> tuple[float, float] | None:
+        """Where a town is. One search, and the answer never changes."""
+        key = self.config.get("google_places_api_key", "")
+        if not key:
+            raise ServiceError("Google Places API key is not set (see Setup).")
+        if self.meter:
+            self.meter()
+        resp = requests.post(
+            "https://places.googleapis.com/v1/places:searchText",
+            headers={"X-Goog-Api-Key": key,
+                     "X-Goog-FieldMask": "places.location",
+                     "Content-Type": "application/json"},
+            json={"textQuery": area, "pageSize": 1}, timeout=30)
+        if resp.status_code != 200:
+            raise ServiceError(
+                f"Google Places error {resp.status_code}: {resp.text[:300]}")
+        places = resp.json().get("places") or []
+        if not places:
+            return None
+        loc = places[0].get("location") or {}
+        if "latitude" not in loc or "longitude" not in loc:
+            return None
+        return float(loc["latitude"]), float(loc["longitude"])
+
+    def places_nearby(self, lat: float, lng: float, radius: int = 4000,
+                      types: list[str] = None,
+                      max_results: int = 20) -> SearchResults:
+        """The businesses *nearest* a point, rather than the best known ones.
+
+        This is the difference that matters. A text search ranks by prominence,
+        which is almost a definition of "has a website"; ranking by distance
+        returns the one-van operation on the side street, which is the whole
+        market. Twenty per call, no pagination — so sweep with several points
+        rather than asking for more.
+        """
+        key = self.config.get("google_places_api_key", "")
+        if not key:
+            raise ServiceError("Google Places API key is not set (see Setup).")
+        body = {
+            "maxResultCount": max(1, min(20, max_results)),
+            "rankPreference": "DISTANCE",
+            "locationRestriction": {"circle": {
+                "center": {"latitude": lat, "longitude": lng},
+                "radius": float(max(1, min(50000, radius)))}},
+        }
+        if types:
+            body["includedTypes"] = list(types)
+        raw = self._nearby_call(body)
+        results = SearchResults()
+        results.seen = len(raw)
+        return self._triage(raw, results, max_results)
+
+    def _nearby_call(self, body: dict) -> list[dict]:
+        """One Nearby Search. Retries without the type filter if Google
+        rejects a type name — a wrong type would silently return nothing,
+        which is worse than a broader search."""
+        key = self.config.get("google_places_api_key", "")
+        headers = {
+            "X-Goog-Api-Key": key,
+            "X-Goog-FieldMask": ",".join([
+                "places.id", "places.displayName", "places.formattedAddress",
+                "places.nationalPhoneNumber", "places.websiteUri",
+                "places.primaryTypeDisplayName", "places.businessStatus"]),
+            "Content-Type": "application/json",
+        }
+        for attempt in (body, {k: v for k, v in body.items()
+                               if k != "includedTypes"}):
+            if self.meter:
+                self.meter()
+            resp = requests.post(
+                "https://places.googleapis.com/v1/places:searchNearby",
+                headers=headers, json=attempt, timeout=30)
+            if resp.status_code == 200:
+                return [_place_row(p) for p in resp.json().get("places", [])
+                        if p.get("businessStatus") in (None, "OPERATIONAL")]
+            if resp.status_code != 400 or "includedTypes" not in attempt:
+                raise ServiceError(
+                    f"Google Places error {resp.status_code}: {resp.text[:300]}")
+        return []
+
+    # -- Yelp, for coverage Google and OSM both miss -------------------------
+
+    YELP_URL = "https://api.yelp.com/v3/businesses/search"
+    YELP_MAX = 50
+
+    def yelp_nearby(self, lat: float, lng: float, radius: int = 5000,
+                    term: str = None, max_results: int = 50) -> SearchResults:
+        """Local businesses from Yelp.
+
+        Worth being straight about what this can and can't do: Yelp's search
+        returns a business's Yelp page, never its own website. So Yelp can
+        tell us a business exists, with a phone number, but not whether it
+        already has a site. Everything from here is therefore treated as
+        "only a Yelp page found" — a real lead under the normal setting, and
+        a weaker one than Google or OSM, where we checked the actual site.
+        """
+        key = (self.config.get("yelp_api_key") or "").strip()
+        if not key:
+            raise ServiceError("No Yelp key set (it's optional — see Setup).")
+        params = {"latitude": lat, "longitude": lng,
+                  "radius": int(max(1, min(40000, radius))),
+                  "limit": max(1, min(self.YELP_MAX, max_results)),
+                  "sort_by": "distance"}
+        if term:
+            params["term"] = term
+        try:
+            resp = requests.get(self.YELP_URL, params=params, timeout=30,
+                                headers={"Authorization": "Bearer " + key})
+        except requests.RequestException as e:
+            raise ServiceError(f"Couldn't reach Yelp: {e}") from e
+        if resp.status_code == 401:
+            raise ServiceError("Yelp didn't accept that key. Check it on Setup.")
+        if resp.status_code == 429:
+            raise ServiceError("Yelp's daily limit is used up — it resets "
+                               "tomorrow. Everything else is unaffected.")
+        if resp.status_code != 200:
+            raise ServiceError(
+                f"Yelp error {resp.status_code}: {resp.text[:200]}")
+        raw = []
+        for b in (resp.json().get("businesses") or []):
+            row = _yelp_row(b)
+            if row:
+                raw.append(row)
+        results = SearchResults()
+        results.seen = len(raw)
+        return self._triage(raw, results, max_results)
+
+    # -- Hunter, for addresses behind a domain we already know ---------------
+
+    def hunter_email(self, domain: str) -> dict:
+        """Ask Hunter for a public address at a domain.
+
+        Only useful where a domain is known — which, for this app, means the
+        businesses whose site is dead or parked. A business with no website at
+        all has no domain to ask about, and those still go to Claude's web
+        search.
+        """
+        key = (self.config.get("hunter_api_key") or "").strip()
+        if not key:
+            raise ServiceError("No Hunter key set (it's optional — see Setup).")
+        try:
+            resp = requests.get(
+                "https://api.hunter.io/v2/domain-search", timeout=30,
+                params={"domain": domain, "api_key": key, "limit": 5})
+        except requests.RequestException as e:
+            raise ServiceError(f"Couldn't reach Hunter: {e}") from e
+        if resp.status_code in (401, 403):
+            raise ServiceError("Hunter didn't accept that key. Check it on Setup.")
+        if resp.status_code == 429:
+            raise ServiceError("Hunter's monthly quota is used up.")
+        if resp.status_code != 200:
+            raise ServiceError(
+                f"Hunter error {resp.status_code}: {resp.text[:200]}")
+        data = (resp.json().get("data") or {})
+        best = None
+        for row in (data.get("emails") or []):
+            value = (row.get("value") or "").strip()
+            if not value:
+                continue
+            # Prefer a generic business address over a named person's.
+            generic = (row.get("type") or "") == "generic"
+            score = (2 if generic else 0) + (1 if row.get("confidence", 0) >= 70 else 0)
+            if best is None or score > best[0]:
+                best = (score, value, row)
+        if not best:
+            return {"found": False, "note": f"Hunter had nothing for {domain}."}
+        _, email, row = best
+        return {"found": True, "email": email,
+                "source": f"https://hunter.io (domain search on {domain})",
+                "note": "Hunter, confidence %s%%" % row.get("confidence", "?")}
+
+    # -- OpenStreetMap, which costs nothing at all ---------------------------
+
+    # Overpass is a free service run by volunteers. Be a good guest: one
+    # request at a time, a real User-Agent, a bounded query, and a cap on how
+    # much is asked for.
+    # Several mirrors, because a free volunteer service is allowed to be busy.
+    OVERPASS_URLS = ("https://overpass-api.de/api/interpreter",
+                     "https://overpass.kumi.systems/api/interpreter",
+                     "https://overpass.osm.ch/api/interpreter")
+    OVERPASS_MAX = 200
+    OSM_SELECTORS = (
+        'nwr["shop"]["name"]',
+        'nwr["craft"]["name"]',
+        'nwr["office"]["name"]',
+        'nwr["amenity"~"^(car_repair|car_wash|veterinary|dentist|doctors|'
+        'driving_school|childcare|bar|cafe|pharmacy|fuel)$"]["name"]',
+    )
+
+    def osm_nearby(self, lat: float, lng: float, radius: int = 5000,
+                   max_results: int = 60) -> SearchResults:
+        """Local businesses from OpenStreetMap.
+
+        A completely separate index from Google's, free, no key, and full of
+        exactly the small operators this app is looking for — an OSM entry
+        very often has a name and a phone number and no website at all.
+        """
+        parts = "".join(f"  {sel}(around:{int(radius)},{lat},{lng});\n"
+                        for sel in self.OSM_SELECTORS)
+        query = (f"[out:json][timeout:40];\n(\n{parts});\n"
+                 f"out center {self.OVERPASS_MAX};")
+        last = "no mirror answered"
+        elements = None
+        for url in self.OVERPASS_URLS:
+            try:
+                resp = requests.post(
+                    url, data={"data": query}, timeout=60,
+                    headers={"User-Agent":
+                             "SoloStudio/1.0 (local business finder)"})
+            except requests.RequestException as e:
+                last = str(e)
+                continue
+            if resp.status_code in (429, 502, 503, 504):
+                last = "busy (HTTP %d)" % resp.status_code
+                continue        # a free service is allowed to be busy
+            if resp.status_code != 200:
+                raise ServiceError(
+                    f"OpenStreetMap error {resp.status_code}: {resp.text[:200]}")
+            try:
+                elements = resp.json().get("elements", [])
+            except ValueError as e:
+                raise ServiceError(
+                    f"OpenStreetMap sent something odd: {e}") from e
+            break
+        if elements is None:
+            raise ServiceError(
+                "Couldn't reach OpenStreetMap — it's free and run by "
+                "volunteers, so it's sometimes busy. Google searching is "
+                "unaffected. (%s)" % last[:120])
+
+        raw = []
+        for el in elements:
+            row = _osm_row(el)
+            if row:
+                raw.append(row)
+        results = SearchResults()
+        results.seen = len(raw)
+        return self._triage(raw, results, max_results)
 
     def _check_sites(self, leads: list[dict]) -> list[tuple[str, str]]:
         """Verdicts for a batch of websites, looked at side by side.
@@ -2462,6 +2790,73 @@ class Agent:
 
     # -- background tick ---------------------------------------------------
 
+    # -- sweeping one town with everything we have ---------------------------
+
+    def town_centre(self, town: str) -> tuple[float, float] | None:
+        """Where a town is, looked up once and remembered forever."""
+        key = "geo:" + town.lower().strip()
+        cached = self.db.get_kv(key)
+        if cached:
+            try:
+                lat, lng = cached.split(",")
+                return float(lat), float(lng)
+            except ValueError:
+                pass
+        point = self.services.places_geocode(town)
+        if point:
+            self.db.set_kv(key, "%f,%f" % point)
+        return point
+
+    def sweep_town(self, town: str, radius: int = 5000) -> dict:
+        """Everything we can find in one town, from every index we have.
+
+        Three passes that fail independently, because they fail for different
+        reasons: Google by distance (the nearest businesses rather than the
+        best known), and OpenStreetMap (free, no key, a different map of the
+        world altogether). Either one being down must not stop the other.
+        """
+        added = seen = 0
+        notes = []
+        point = None
+        try:
+            point = self.town_centre(town)
+        except Exception as e:
+            notes.append(f"couldn't place {town}: {explain(e, 90)}")
+        if not point:
+            return {"added": 0, "seen": 0, "notes": notes or ["no location"]}
+        lat, lng = point
+
+        sources = [
+            ("Google by distance",
+             lambda: self.services.places_nearby(lat, lng, radius=radius)),
+            ("OpenStreetMap",
+             lambda: self.services.osm_nearby(lat, lng, radius=radius)),
+        ]
+        if (self.config.get("yelp_api_key") or "").strip():
+            sources.append(("Yelp",
+                            lambda: self.services.yelp_nearby(lat, lng,
+                                                              radius=radius)))
+        for label, call in sources:
+            try:
+                found = call()
+            except Exception as e:
+                notes.append(f"{label}: {explain(e, 90)}")
+                self.db.log(None, "sweep_failed", f"{label} in {town}: "
+                            f"{explain(e, 200)}"[:400])
+                continue
+            seen += getattr(found, "seen", len(found))
+            new = 0
+            for lead in found:
+                if not lead.get("place_id"):
+                    continue
+                if self.db.add_lead(**lead) is not None:
+                    new += 1
+            added += new
+            self.db.log(None, "sweep",
+                        f"{label} around {town}: {getattr(found, 'seen', 0)} "
+                        f"businesses, {len(found)} worth pitching, {new} new.")
+        return {"added": added, "seen": seen, "notes": notes}
+
     # -- the hunt ----------------------------------------------------------
 
     def hunt(self, area: str, want: int = 8, budget: int = 12) -> dict:
@@ -2503,8 +2898,28 @@ class Agent:
 
         added = seen = ran = 0
         best = []
+        swept = set()
         for query in queries[:budget]:
             ran += 1
+            where = query.split(" in ", 1)[-1]
+
+            # First time in this town, take everything: the nearest businesses
+            # rather than the best-known ones, and OpenStreetMap's own map of
+            # the place, which costs nothing at all.
+            if where not in swept:
+                swept.add(where)
+                try:
+                    sweep = self.sweep_town(where)
+                    added += sweep["added"]
+                    seen += sweep["seen"]
+                    if sweep["added"]:
+                        best.append(f"{sweep['added']} around {where}")
+                except Exception as e:
+                    self.db.log(None, "hunt_failed",
+                                f"sweep of {where}: {explain(e, 200)}"[:400])
+                if added >= want:
+                    break
+
             try:
                 r = self.find_leads(query)
             except Exception as e:
@@ -2514,7 +2929,7 @@ class Agent:
             added += r["added"]
             seen += r["seen"]
             if r["added"]:
-                best.append(f"{r['added']} in {query.split(' in ', 1)[-1]}")
+                best.append(f"{r['added']} in {where}")
             if added >= want:
                 break
 
@@ -2627,7 +3042,7 @@ class Agent:
         found = 0
         for lead in leads:
             try:
-                result = self.services.research_email(dict(lead))
+                result = self._find_email(dict(lead))
             except Exception as e:
                 self.db.log(lead["id"], "research_failed", explain(e, 300))
                 self.db.update_lead(lead["id"], researched_at=_now())
@@ -2661,6 +3076,24 @@ class Agent:
                          "The Researcher turned up contact addresses — check "
                          "them on the Approve page.", tags="mag")
         return {"ok": True, "researched": len(leads), "found": found}
+
+    def _find_email(self, lead: dict) -> dict:
+        """An address for one lead, from whichever source can actually help.
+
+        Hunter works from a domain, so it only has anything to say about the
+        businesses whose site is dead or parked — for those it is far better
+        than guessing. A business with no website at all has no domain, and
+        goes to Claude's web search, which can read a Facebook page.
+        """
+        domain = _domain_of(lead.get("social_url"))
+        if domain and (self.config.get("hunter_api_key") or "").strip():
+            try:
+                found = self.services.hunter_email(domain)
+                if found.get("found"):
+                    return found
+            except Exception as e:
+                self.db.log(lead.get("id"), "hunter_failed", explain(e, 200))
+        return self.services.research_email(lead)
 
     def accept_suggested_email(self, lead_id: int) -> dict:
         """Human accepts the Researcher's suggestion for a lead."""

@@ -238,7 +238,22 @@ def _access_gate():
 # ---------------------------------------------------------------------------
 
 def _autopilot_loop():
+    # Straight to work on launch rather than waiting out the first interval.
+    # keep_stocked() is already lazy — it does nothing unless the shelf is low
+    # and it hasn't hunted recently — so opening the app twice in a row costs
+    # nothing, and opening it after a week gets leads before you've sat down.
     last_run = 0.0
+    try:
+        time.sleep(2)                  # let the server finish binding
+        STATE.agent.watch()
+        if STATE.config.get("autopilot_enabled"):
+            STATE.agent.keep_stocked()
+            STATE.agent.research_missing_emails()
+    except Exception as e:
+        try:
+            STATE.db.log(None, "autopilot_error", core.explain(e, 500))
+        except Exception:
+            pass
     while True:
         time.sleep(5)
         try:
@@ -819,10 +834,10 @@ details.adv summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:14px
 <h1>Setup</h1>
 
 <div class="progress">
-  {% if keys_missing %}{{ keys_have }} of {{ key_fields|length }} keys saved —
+  {% if keys_missing %}{{ keys_have }} of {{ keys_needed }} keys saved —
     {{ keys_missing }} to go
     <div class="sub">Work down the list. Each one opens the right page for you.</div>
-  {% else %}All {{ key_fields|length }} keys saved
+  {% else %}All {{ keys_needed }} keys saved
     <div class="sub">Hit <b>Test connections</b> at the bottom to check every one
       of them actually works.</div>
   {% endif %}
@@ -840,6 +855,7 @@ never shown again — leave a box blank to keep what's already saved.</p>
     <span class="n">{{ loop.index }}</span>
     <h3>{{ k.name }}</h3>
     {% if config[k.field] %}<span class="pill have">saved ✓</span>
+    {% elif k.optional %}<span class="pill">optional</span>
     {% else %}<span class="pill need">needed</span>{% endif %}
     <span class="muted" style="margin-left:auto">{{ k.minutes }}</span>
   </div>
@@ -3209,7 +3225,8 @@ def current_findings() -> list[dict]:
             "restart-pending", core.WATCH, "An update is installed but not running",
             "Restart to start using it.", "/updates", "Restart"))
     return core.checkup(STATE.db, STATE.config,
-                        [(k["name"], k["field"]) for k in KEY_FIELDS],
+                        [(k["name"], k["field"]) for k in KEY_FIELDS
+                         if not k.get("optional")],
                         extra)
 
 
@@ -3579,7 +3596,8 @@ def assistant_snapshot() -> str:
     else:
         out.append("\nNothing is broken and nothing is waiting on them.")
 
-    missing = [k["name"] for k in KEY_FIELDS if not cfg.get(k["field"])]
+    missing = [k["name"] for k in KEY_FIELDS
+               if not cfg.get(k["field"]) and not k.get("optional")]
     out.append("Setup: " + ("every API key is saved." if not missing else
                "still missing " + ", ".join(missing) + "."))
     for field, label in (("your_name", "name"), ("mailing_address", "mailing address")):
@@ -3698,6 +3716,43 @@ KEY_FIELDS = [
             "<b>Generate token</b>, and copy it.",
         ],
         "note": "Netlify's free tier is plenty for the sites you'll be selling.",
+    },
+    {
+        "field": "yelp_api_key",
+        "name": "Yelp",
+        "optional": True,
+        "job": "A fourth index of local businesses, for coverage the others miss.",
+        "hint": "",
+        "url": "https://docs.developer.yelp.com/docs/fusion-intro",
+        "site": "Yelp for Developers",
+        "minutes": "5 min \u00b7 optional",
+        "steps": [
+            "Create a free developer account and add an app.",
+            "Copy the <b>API Key</b> (not the client ID).",
+        ],
+        "note": "Free tier, a few hundred calls a day. Worth knowing: Yelp "
+                "gives us their Yelp page, never their own website \u2014 so "
+                "these leads are marked as a directory page only, a weaker "
+                "signal than Google or OpenStreetMap where the real site got "
+                "checked. Everything works without this.",
+    },
+    {
+        "field": "hunter_api_key",
+        "name": "Hunter",
+        "optional": True,
+        "job": "Finds email addresses behind a domain we already know.",
+        "hint": "",
+        "url": "https://hunter.io/api-keys",
+        "site": "hunter.io",
+        "minutes": "3 min \u00b7 optional",
+        "steps": [
+            "Sign up free (25 searches a month), then open <b>API Keys</b>.",
+            "Copy the key.",
+        ],
+        "note": "Only helps for businesses whose website is dead or parked "
+                "\u2014 those have a domain to look up. A business with no "
+                "website at all has no domain, and Claude's web search handles "
+                "those. Everything works without this.",
     },
     {
         "field": "stripe_secret_key",
@@ -3831,12 +3886,14 @@ def setup():
         return redirect(url_for("setup"))
     ip = lan_ip()
     target = request.url_root if CLOUD_MODE else f"http://{ip}:{PORT}/"
-    have = sum(1 for k in KEY_FIELDS if STATE.config.get(k["field"]))
+    needed = sum(1 for k in KEY_FIELDS if not k.get("optional"))
+    have = sum(1 for k in KEY_FIELDS if STATE.config.get(k["field"])
+               and not k.get("optional"))
     trades_text = "\n".join(core.DEFAULT_TRADES)
     price = core.fmt_price(STATE.config.get("site_price_usd", 500))
     return _render(SETUP, key_fields=KEY_FIELDS, lan_ip=ip,
                    phone_listening=(CLOUD_MODE or BOUND_HOST == "0.0.0.0"),
-                   keys_have=have, keys_missing=len(KEY_FIELDS) - have,
+                   keys_have=have, keys_needed=needed, keys_missing=needed - have,
                    trades_text=trades_text, cost=_search_cost(STATE.config),
                    price_value=price,
                    phone_qr=qr_svg(target))
