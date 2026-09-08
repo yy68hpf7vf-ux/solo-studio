@@ -373,6 +373,10 @@ DEFAULT_CONFIG = {
     # email itself is still read and approved by a person, with that address
     # shown, so a wrong one is caught before anything leaves.
     "auto_accept_emails": True,
+    # How wide to cast the net: "none" only takes businesses with no website
+    # at all, "broken" adds dead links, parked domains and social-only pages,
+    # "weak" adds sites that are http-only or unusable on a phone.
+    "lead_quality": "broken",
     "lead_floor": 15,                 # hunt when fewer than this are waiting
     "hunt_interval_hours": 6,         # and no more often than this
     "monthly_google_cap": GOOGLE_CALL_CAP,
@@ -450,6 +454,8 @@ CREATE TABLE IF NOT EXISTS leads (
     stripe_session_url TEXT,
     amount_cents INTEGER,
     email_source TEXT,     -- where JARVIS found the address, when he did
+    site_status TEXT,      -- what's wrong with their website: see SITE_* above
+    site_note TEXT,        -- the detail behind that verdict
     suggested_email TEXT,
     suggested_email_source TEXT,
     suggested_email_note TEXT,
@@ -516,6 +522,8 @@ class Database:
                           ("social_url", "TEXT"),
                           ("amount_cents", "INTEGER"),
                           ("email_source", "TEXT"),
+                          ("site_status", "TEXT"),
+                          ("site_note", "TEXT"),
                           ("suggested_email", "TEXT"),
                           ("suggested_email_source", "TEXT"),
                           ("suggested_email_note", "TEXT"),
@@ -598,17 +606,17 @@ class Database:
     # -- leads ------------------------------------------------------------
 
     def add_lead(self, *, place_id, name, address, phone, category, email=None,
-                 social_url=None) -> int | None:
+                 social_url=None, site_status=None, site_note=None) -> int | None:
         """Insert a lead; returns new id, or None if this place already exists."""
         c = self._conn()
         try:
             with c:
                 cur = c.execute(
                     "INSERT INTO leads (place_id, name, address, phone, category, email,"
-                    " social_url, stage, created_at, updated_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    " social_url, site_status, site_note, stage, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (place_id, name, address, phone, category, email, social_url,
-                     STAGE_FOUND, _now(), _now()),
+                     site_status, site_note, STAGE_FOUND, _now(), _now()),
                 )
             return cur.lastrowid
         except sqlite3.IntegrityError:
@@ -892,6 +900,88 @@ def social_platform(url: str) -> str:
     return ""
 
 
+# What can be wrong with a business's website, worst first. Each one is a
+# reason to call them that is true and specific — which is the difference
+# between a pitch and spam.
+SITE_NONE = "none"            # no website at all: the cleanest pitch there is
+SITE_DEAD = "dead"            # the link Google has doesn't load
+SITE_PARKED = "parked"        # a placeholder or domain-for-sale page
+SITE_SOCIAL = "social"        # a Facebook page standing in for a website
+SITE_INSECURE = "insecure"    # http only — browsers label it "Not secure"
+SITE_NOT_MOBILE = "not-mobile"  # no viewport: unusable on a phone
+SITE_OK = "ok"                # a real, working, modern site — leave them alone
+
+SITE_REASON = {
+    SITE_NONE: "no website at all",
+    SITE_DEAD: "their website doesn't load",
+    SITE_PARKED: "their domain is parked — nothing on it",
+    SITE_SOCIAL: "only a social page, no website",
+    SITE_INSECURE: "their site is http only, so browsers flag it as not secure",
+    SITE_NOT_MOBILE: "their site isn't built for phones",
+}
+
+# How wide to cast the net, in order. Each level adds to the one before it.
+QUALITY_LEVELS = {
+    "none": (SITE_NONE,),
+    "broken": (SITE_NONE, SITE_SOCIAL, SITE_DEAD, SITE_PARKED),
+    "weak": (SITE_NONE, SITE_SOCIAL, SITE_DEAD, SITE_PARKED,
+             SITE_INSECURE, SITE_NOT_MOBILE),
+}
+
+# Markers of a page that exists but says nothing. Kept narrow on purpose: a
+# false positive here means pitching someone who has a perfectly good site.
+PARKED_MARKERS = (
+    "this domain is for sale", "domain for sale", "buy this domain",
+    "parked free, courtesy", "coming soon", "under construction",
+    "site is currently unavailable", "future home of", "godaddy.com/domains",
+    "this site can't be reached", "default web page",
+)
+SITE_TIMEOUT = 8
+SITE_WORKERS = 12
+SITE_MAX_BYTES = 200_000
+
+
+def check_website(url: str, timeout: int = SITE_TIMEOUT) -> tuple[str, str]:
+    """Look at a business's website and say what, if anything, is wrong with it.
+
+    Costs nothing — this is an ordinary web request, not a billable API call —
+    and it is the difference between "20 of them have websites, sorry" and
+    "6 of these websites are broken, here they are".
+    """
+    if not url:
+        return SITE_NONE, ""
+    platform = social_platform(url)
+    if platform:
+        return SITE_SOCIAL, platform
+    try:
+        resp = requests.get(
+            url, timeout=timeout, allow_redirects=True, stream=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; SoloStudio/1.0)"})
+    except requests.RequestException as e:
+        return SITE_DEAD, type(e).__name__
+    try:
+        if resp.status_code >= 400:
+            return SITE_DEAD, f"HTTP {resp.status_code}"
+        try:
+            body = resp.raw.read(SITE_MAX_BYTES, decode_content=True) or b""
+        except Exception:
+            body = resp.content[:SITE_MAX_BYTES]
+        text = body.decode("utf-8", "ignore")
+        low = text.lower()
+        for marker in PARKED_MARKERS:
+            if marker in low:
+                return SITE_PARKED, marker
+        if len(text.strip()) < 500:
+            return SITE_PARKED, "almost nothing on the page"
+        if not resp.url.lower().startswith("https://"):
+            return SITE_INSECURE, resp.url[:120]
+        if "name=\"viewport\"" not in low and "name='viewport'" not in low:
+            return SITE_NOT_MOBILE, "no viewport tag"
+        return SITE_OK, ""
+    finally:
+        resp.close()
+
+
 class SearchResults(list):
     """Leads found, plus what was passed over on the way there.
 
@@ -903,9 +993,10 @@ class SearchResults(list):
     def __init__(self, *a):
         super().__init__(*a)
         self.seen = 0            # businesses Google returned
-        self.with_site = 0       # rejected: they already have a real website
+        self.with_site = 0       # rejected: a real, working, modern website
         self.closed = 0          # rejected: permanently closed
         self.social_only = 0     # kept: only a Facebook/Instagram/Yelp page
+        self.by_status = {}      # kept, counted by what's wrong with their site
 
 
 def describe_search(r: dict) -> str:
@@ -922,22 +1013,24 @@ def describe_search(r: dict) -> str:
     added, found = r.get("added", 0), r.get("found", 0)
     bits = [f"looked at {seen}"]
     if r.get("with_site"):
-        bits.append(f"{r['with_site']} already have a website")
+        bits.append(f"{r['with_site']} have a working site")
     if r.get("closed"):
         bits.append(f"{r['closed']} closed down")
-    social = r.get("social_only", 0)
-    if found:
-        kept = f"{found} with no website of their own"
-        if social:
-            kept += f" ({social} of them running on social media alone)"
-        bits.append(kept)
+    by = r.get("by_status") or {}
+    if by:
+        worth = ", ".join(
+            "%d %s" % (n, SITE_REASON.get(k, k))
+            for k, n in sorted(by.items(), key=lambda kv: -kv[1]))
+        bits.append("worth pitching: " + worth)
+    elif found:
+        bits.append(f"{found} worth pitching")
     head = ", ".join(bits)
     if added:
         return f"{head} — {added} new."
     if found:
         return f"{head} — all already in your list."
-    return (f"{head}. Everyone Google showed here has a site already; smaller "
-            "towns nearby are where the gaps are.")
+    return (f"{head}. Every site here loads and works; smaller towns nearby "
+            "are where the gaps are.")
 
 
 # ---------------------------------------------------------------------------
@@ -1180,6 +1273,7 @@ class Services:
             "Content-Type": "application/json",
         }
         results = SearchResults()
+        raw: list[dict] = []
         page_token = None
         while len(results) < max_results:
             body: dict = {"textQuery": query, "pageSize": 20}
@@ -1197,14 +1291,7 @@ class Services:
                 if p.get("businessStatus") not in (None, "OPERATIONAL"):
                     results.closed += 1
                     continue
-                site = p.get("websiteUri") or ""
-                platform = social_platform(site)
-                if site and not platform:
-                    results.with_site += 1
-                    continue  # a real website — not our lead
-                if platform:
-                    results.social_only += 1
-                results.append({
+                raw.append({
                     "place_id": p.get("id"),
                     "name": (p.get("displayName") or {}).get("text", "Unknown"),
                     "address": p.get("formattedAddress"),
@@ -1212,13 +1299,43 @@ class Services:
                     "category": p.get("primaryTypeDisplayName", {}).get("text")
                     if isinstance(p.get("primaryTypeDisplayName"), dict)
                     else p.get("primaryTypeDisplayName"),
-                    "social_url": site or None,
+                    "social_url": p.get("websiteUri") or None,
                 })
             page_token = data.get("nextPageToken")
-            if not page_token:
+            if not page_token or len(raw) >= max_results:
                 break
+
+        # Now look at the websites themselves. Google only says whether a link
+        # exists; plenty of those links are dead, parked, or a Facebook page.
+        # Checking costs nothing but a web request, and it is what turns "they
+        # all have websites" into a list of people worth calling.
+        keep = QUALITY_LEVELS.get(
+            self.config.get("lead_quality", "broken"), QUALITY_LEVELS["broken"])
+        for lead, (status, note) in zip(raw, self._check_sites(raw)):
+            if status not in keep:
+                results.with_site += 1
+                continue
+            lead["site_status"] = status
+            lead["site_note"] = note[:200] if note else None
+            if status == SITE_SOCIAL:
+                results.social_only += 1
+            results.by_status[status] = results.by_status.get(status, 0) + 1
+            results.append(lead)
         del results[max_results:]
         return results
+
+    def _check_sites(self, leads: list[dict]) -> list[tuple[str, str]]:
+        """Verdicts for a batch of websites, looked at side by side.
+
+        One at a time this would be minutes. A business with no link at all
+        costs nothing and never leaves the process.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        urls = [(lead.get("social_url") or "") for lead in leads]
+        if not any(urls):
+            return [(SITE_NONE, "")] * len(urls)
+        with ThreadPoolExecutor(max_workers=SITE_WORKERS) as pool:
+            return list(pool.map(check_website, urls))
 
     # -- Inkbox email ------------------------------------------------------
 
@@ -1833,7 +1950,8 @@ class Agent:
              "seen": getattr(found, "seen", len(found)),
              "with_site": getattr(found, "with_site", 0),
              "closed": getattr(found, "closed", 0),
-             "social_only": getattr(found, "social_only", 0)}
+             "social_only": getattr(found, "social_only", 0),
+             "by_status": dict(getattr(found, "by_status", {}) or {})}
         self.db.log(None, "find_leads", f"{query!r}: {describe_search(r)}")
         return r
 

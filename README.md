@@ -74,6 +74,24 @@ left. Work down the list in order:
 | 4 | Stripe | 3 min | Takes the payment |
 | 5 | Google Places | 10 min | Finds businesses with no website |
 
+**JARVIS opens the websites.** Google only tells you whether a business has a
+link. Plenty of those links are dead, parked, or a Facebook page. So he fetches
+each one and looks: does it load, is there anything on it, is it https, is it
+built for phones. Checking costs nothing — these are ordinary web requests, not
+billable searches — and it is the difference between "they all have websites,
+sorry" and a list of people with a specific, true reason to call them.
+
+Three settings, on Setup:
+
+| | Who becomes a lead |
+|---|---|
+| **Strict** | Only businesses with no website at all. |
+| **Normal** (default) | Plus dead links, parked domains, and social-only pages. Someone who paid for a site that's now a 404 is a better lead than a blank listing. |
+| **Wide** | Plus sites that are http-only (browsers show "Not secure") or have no mobile layout. |
+
+A site that loads, works and is built for phones is never a lead, at any
+setting. Every lead carries its reason, shown on the Approve page.
+
 **What counts as "no website".** A business whose only link is a Facebook or
 Instagram page counts — it has nowhere of its own to send a customer, which is
 the whole pitch, and someone there already tried, which makes it a warmer lead

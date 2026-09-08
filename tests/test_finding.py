@@ -45,15 +45,70 @@ class WhatCountsAsNoWebsiteTest(unittest.TestCase):
         self.core = core
         self.svc = core.Services({"google_places_api_key": "k"})
 
-    def _search(self, places):
+    def _search(self, places, verdicts=None):
+        """Run a search with the website check stubbed.
+
+        Never let a test reach the real internet: it would be slow, flaky, and
+        would quietly turn every made-up domain into a "dead site" lead.
+        """
+        table = verdicts or {}
+
+        def fake_check(url, timeout=None):
+            if not url:
+                return self.core.SITE_NONE, ""
+            if url in table:
+                return table[url]
+            platform = self.core.social_platform(url)
+            if platform:
+                return self.core.SITE_SOCIAL, platform
+            return self.core.SITE_OK, ""
+
         with mock.patch.object(self.core.requests, "post",
-                               return_value=_Resp(places)):
+                               return_value=_Resp(places)), \
+                mock.patch.object(self.core, "check_website", fake_check):
             return self.svc.places_search_no_website("roofers in Atlanta, GA")
 
-    def test_a_real_website_is_still_a_disqualifier(self):
+    def test_a_working_modern_website_is_still_a_disqualifier(self):
         got = self._search([place("Big Roofing", "https://bigroofing.com")])
         self.assertEqual(len(got), 0)
         self.assertEqual(got.with_site, 1)
+
+    def test_a_website_that_does_not_load_is_a_lead(self):
+        """The best lead of the lot: they paid for a site and it's gone."""
+        got = self._search(
+            [place("Gone Roofing", "https://goneroofing.com")],
+            {"https://goneroofing.com": (self.core.SITE_DEAD, "HTTP 404")})
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["site_status"], self.core.SITE_DEAD)
+        self.assertEqual(got[0]["site_note"], "HTTP 404")
+
+    def test_a_parked_domain_is_a_lead(self):
+        got = self._search(
+            [place("Parked Co", "https://parked.com")],
+            {"https://parked.com": (self.core.SITE_PARKED, "coming soon")})
+        self.assertEqual(len(got), 1)
+
+    def test_the_net_can_be_narrowed_back_to_no_website_at_all(self):
+        self.svc.config["lead_quality"] = "none"
+        got = self._search(
+            [place("Gone", "https://gone.com"), place("Nothing")],
+            {"https://gone.com": (self.core.SITE_DEAD, "timeout")})
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["name"], "Nothing")
+
+    def test_the_net_can_be_widened_to_weak_sites(self):
+        self.svc.config["lead_quality"] = "weak"
+        got = self._search(
+            [place("Old Co", "http://oldco.com")],
+            {"http://oldco.com": (self.core.SITE_INSECURE, "http://oldco.com")})
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["site_status"], self.core.SITE_INSECURE)
+
+    def test_a_weak_site_is_not_a_lead_at_the_default_setting(self):
+        got = self._search(
+            [place("Old Co", "http://oldco.com")],
+            {"http://oldco.com": (self.core.SITE_INSECURE, "x")})
+        self.assertEqual(len(got), 0)
 
     def test_a_facebook_page_is_a_lead(self):
         got = self._search([place("Joe Roofs", "https://facebook.com/joeroofs")])
@@ -82,6 +137,8 @@ class WhatCountsAsNoWebsiteTest(unittest.TestCase):
         self.assertEqual((got.seen, got.with_site, got.social_only, got.closed),
                          (4, 1, 1, 1))
         self.assertEqual(len(got), 2)
+        self.assertEqual(got.by_status,
+                         {self.core.SITE_NONE: 1, self.core.SITE_SOCIAL: 1})
 
 
 class SayingWhyNothingWasFoundTest(unittest.TestCase):
@@ -110,9 +167,15 @@ class SayingWhyNothingWasFoundTest(unittest.TestCase):
     def test_a_good_run_leads_with_the_number_that_matters(self):
         said = self.core.describe_search(
             {"seen": 60, "with_site": 52, "found": 8, "added": 5,
-             "social_only": 3})
+             "by_status": {"none": 3, "dead": 3, "social": 2}})
         self.assertIn("5 new", said)
-        self.assertIn("social media", said)
+
+    def test_it_says_why_each_one_is_worth_pitching(self):
+        said = self.core.describe_search(
+            {"seen": 60, "with_site": 52, "found": 8, "added": 5,
+             "by_status": {"dead": 5, "social": 3}})
+        self.assertIn("doesn't load", said)
+        self.assertIn("social page", said)
 
 
 class SpreadingTheSearchTest(unittest.TestCase):

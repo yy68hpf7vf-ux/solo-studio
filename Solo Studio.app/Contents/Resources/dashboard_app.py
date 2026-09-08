@@ -917,6 +917,21 @@ postal address on commercial email.</p>
   placeholder="plumbers in Riverside, CA&#10;barber shops in Riverside, CA&#10;landscapers in Corona, CA">{{ config.saved_searches }}</textarea>
 </div>
 <div>
+<label>How wide to cast the net</label>
+<select name="lead_quality">
+  <option value="none" {% if config.lead_quality == 'none' %}selected{% endif %}>
+    Strict — only businesses with no website at all</option>
+  <option value="broken" {% if config.lead_quality in (None, '', 'broken') %}selected{% endif %}>
+    Normal — also dead links, parked domains and social-only pages</option>
+  <option value="weak" {% if config.lead_quality == 'weak' %}selected{% endif %}>
+    Wide — also sites that are http-only or unusable on a phone</option>
+</select>
+<p class="muted">JARVIS opens every website Google lists and looks at it. A
+dead link or a parked domain is a better lead than a blank listing — they
+already paid for a site once. Costs nothing: these are ordinary web requests,
+not Google searches. A site that loads, works and is built for phones is never
+a lead at any setting.</p>
+
 <label><input type="checkbox" name="auto_research_enabled" value="1"
   {% if config.auto_research_enabled %}checked{% endif %}
   style="width:auto;margin-right:8px">Let the Researcher hunt missing emails</label>
@@ -1585,8 +1600,14 @@ app.jinja_env.loader = DictLoader({"base": BASE})
 
 @app.template_filter("platform")
 def _platform_name(url: str) -> str:
-    """"facebook.com" out of a link, for "running on ... alone"."""
+    """"facebook.com" out of a link."""
     return core.social_platform(url) or "social media"
+
+
+@app.template_filter("reason")
+def _site_reason(status: str) -> str:
+    """The plain-English reason this business is worth pitching."""
+    return core.SITE_REASON.get(status, status or "no website")
 
 
 @app.context_processor
@@ -2639,10 +2660,14 @@ by themselves.</p></div>
   <div class="muted">{{ item.lead['category'] or '' }}{% if item.lead['address'] %}
     · {{ item.lead['address'] }}{% endif %}{% if item.lead['phone'] %}
     · {{ item.lead['phone'] }}{% endif %}</div>
-  {% if item.lead['social_url'] %}
-  <div class="muted" style="margin-top:4px">No website — running on
-    <a href="{{ item.lead['social_url'] }}" target="_blank"
-       rel="noopener noreferrer">{{ item.lead['social_url']|platform }}</a> alone.</div>
+  {% if item.lead['site_status'] and item.lead['site_status'] != 'none' %}
+  <div class="muted" style="margin-top:4px">Why they're a lead:
+    <b>{{ item.lead['site_status']|reason }}</b>
+    {% if item.lead['social_url'] %}—
+      <a href="{{ item.lead['social_url'] }}" target="_blank"
+         rel="noopener noreferrer">{{ item.lead['social_url'][:70] }}</a>{% endif %}
+    {% if item.lead['site_note'] %}<span style="opacity:.7">({{ item.lead['site_note'] }})</span>{% endif %}
+  </div>
   {% endif %}
   <div class="muted" style="margin:6px 0"><b>To:</b> {{ item.lead['email'] }}
   {% if item.lead['email_source'] %}
@@ -3781,6 +3806,9 @@ def setup():
                 pass
         cfg["auto_search_enabled"] = bool(request.form.get("auto_search_enabled"))
         cfg["auto_research_enabled"] = bool(request.form.get("auto_research_enabled"))
+        quality = request.form.get("lead_quality", "")
+        if quality in core.QUALITY_LEVELS:
+            cfg["lead_quality"] = quality
         if "saved_searches" in request.form:
             cfg["saved_searches"] = request.form.get("saved_searches", "")
         for field, lo, hi in (("search_interval_hours", 1, 168),
