@@ -96,18 +96,27 @@ it, which beats guessing. Where there is no website at all there is no domain
 to look up, so Claude's web search reads their Facebook page or directory
 listing instead.
 
-**He crawls the map on his own.** No typing, no buttons. He works out the towns
-around home, breaks each one into a grid of spots — Google returns the twenty
-businesses nearest a point and nothing more, so one point per town is one
-street corner per town — and sweeps a few spots every couple of minutes while
-the app is open. The Dashboard shows how far round he's got.
+**He crawls the country on his own — city by city, state by state.** No typing,
+no buttons. Every city in the United States is queued: your own state first,
+biggest cities first within each state, and the towns immediately around home
+before any of it. He places each city on the map once, sweeps a grid of spots
+across it, and moves to the next.
 
-He stops when he has enough banked (1,000 by default, on Setup) or when the map
-is covered, and starts again if the pile runs down. Sweeping the same ground
-twice finds nothing and still costs a search.
+The grid matters: Google returns the twenty businesses nearest a point and
+nothing more, so one point per city would be one street corner per city.
 
-**No home town needed.** If you haven't set one he uses the postal address you
-already gave for the emails. "Without typing anything" means exactly that.
+He stops when he has enough banked (1,000 by default, on Setup) and starts
+again if the pile runs down. Progress is saved, so closing the app and opening
+it tomorrow carries on from the same city rather than starting over.
+
+**No home town needed.** If you haven't set one he takes it from the postal
+address you already gave for the emails. If there's no address either, he
+crawls the country anyway rather than doing nothing. "Without clicking
+anything" means exactly that.
+
+**It works with nothing else working.** Out of Claude credit, OpenStreetMap
+down, Yelp not set up — the crawl still runs, because the city list is built in
+rather than looked up.
 
 **He starts on launch.** Opening the app puts him to work: check what needs
 you, crawl if there's map left, look up missing addresses.

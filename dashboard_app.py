@@ -3226,17 +3226,17 @@ appear.</p>
 
 
 def _crawl_progress() -> dict:
-    """How far round the map JARVIS has got."""
+    """Which city JARVIS is on, and how far through the country."""
     db = STATE.db
     try:
-        plan = json.loads(db.get_kv("crawl_plan") or "[]")
-        at = int(db.get_kv("crawl_cursor") or 0)
+        cities = json.loads(db.get_kv("crawl_cities") or "[]")
+        at = int(db.get_kv("crawl_city") or 0)
     except (TypeError, ValueError):
         return {}
-    if not plan:
+    if not cities:
         return {}
-    return {"at": min(at, len(plan)), "of": len(plan),
-            "pct": min(100, round(100 * at / len(plan)))}
+    at = min(at, len(cities) - 1)
+    return {"at": at + 1, "of": len(cities), "city": cities[at]}
 
 
 def current_findings() -> list[dict]:
@@ -3244,12 +3244,12 @@ def current_findings() -> list[dict]:
     itself knows — an update sitting on disk, for one."""
     extra = []
     crawl = _crawl_progress()
-    if crawl and crawl["at"] < crawl["of"]:
+    if crawl and STATE.config.get("auto_search_enabled"):
         extra.append(core.finding(
             "crawling", core.WATCH,
-            "JARVIS is working through the map",
-            "Area %d of %d swept (%d%%). He keeps going on his own while the "
-            "app is open." % (crawl["at"], crawl["of"], crawl["pct"]),
+            "JARVIS is working through %s" % crawl["city"],
+            "City %d of %d — he goes city by city, state by state, on his own "
+            "while the app is open." % (crawl["at"], crawl["of"]),
             "/activity", "Watch"))
     if not CLOUD_MODE and _restart_pending():
         extra.append(core.finding(

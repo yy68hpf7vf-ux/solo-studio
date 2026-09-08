@@ -342,11 +342,11 @@ if __name__ == "__main__":
 
 
 class CrawlTest(unittest.TestCase):
-    """Covering the map on its own.
+    """Covering the country on its own, city by city.
 
-    The complaint this answers: "I want it to find automatically without me
-    typing anything — I should have 1000, not 93." Ninety-three was the old
-    rule doing exactly what it said: topping up to fifteen and sleeping.
+    The complaint this answers: "I typed el paso and it didn't find one thing.
+    I told you to make it automatic without me clicking anything — JARVIS
+    should search city by city, state by state."
     """
 
     def setUp(self):
@@ -356,11 +356,13 @@ class CrawlTest(unittest.TestCase):
         self.core = core
         self.cfg = dict(core.DEFAULT_CONFIG, google_places_api_key="k",
                         auto_search_enabled=True,
-                        territory_base="Los Angeles, CA", tiles_per_tick=2)
+                        territory_base="El Paso, TX", tiles_per_tick=2)
         self.agent = core.Agent(core.Database(), core.Services(self.cfg),
                                 self.cfg)
-        self.agent.services.towns_near = lambda base, miles: ["A, CA", "B, CA"]
-        self.agent.services.places_geocode = lambda area: (33.9, -118.3)
+        self.agent.services.towns_near = lambda base, miles: ["Socorro, TX"]
+        self.placed = []
+        self.agent.services.places_geocode = lambda area: (
+            self.placed.append(area), (31.76 + len(self.placed) * 0.01, -106.49))[1]
         self.swept = []
         self.agent.sweep_point = lambda label, lat, lng, radius=0: (
             self.swept.append((label, lat, lng)), {"added": 1, "seen": 5})[1]
@@ -369,78 +371,87 @@ class CrawlTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
         os.environ.pop("SOLO_STUDIO_HOME", None)
 
-    # -- the plan ------------------------------------------------------------
+    # -- the queue -----------------------------------------------------------
 
-    def test_a_town_becomes_several_spots_not_one(self):
-        """Google returns the 20 nearest to a point and nothing more, so one
-        point per town is one street corner per town. Two towns plus the home
-        town itself, nine spots each."""
-        self.agent.services.places_geocode = lambda area: {
-            "A, CA": (33.9, -118.3), "B, CA": (34.2, -118.0)}.get(
-                area, (33.0, -117.0))
-        self.assertEqual(len(self.agent.crawl_plan()),
-                         3 * self.agent.TILE_GRID ** 2)
+    def test_it_queues_the_whole_country(self):
+        cities = self.agent.crawl_cities()
+        self.assertGreater(len(cities), 1000)
 
-    def test_every_spot_is_somewhere_different(self):
-        """Neighbouring towns overlap and two names can land on the same
-        point. Sweeping the same ground twice costs a call and finds nothing."""
-        plan = self.agent.crawl_plan()          # all three geocode alike here
-        points = {(lat, lng) for _, lat, lng in plan}
-        self.assertEqual(len(points), len(plan))
-        self.assertEqual(len(plan), self.agent.TILE_GRID ** 2)
+    def test_home_comes_first_then_the_towns_round_it(self):
+        cities = self.agent.crawl_cities()
+        self.assertEqual(cities[0], "El Paso, TX")
+        self.assertEqual(cities[1], "Socorro, TX")
 
-    def test_the_plan_is_worked_out_once_and_remembered(self):
+    def test_their_own_state_comes_before_anywhere_else(self):
+        cities = self.agent.crawl_cities()
+        states = [c.rsplit(", ", 1)[-1] for c in cities[:60]]
+        self.assertEqual(set(states), {"TX"})
+
+    def test_no_city_is_queued_twice(self):
+        cities = self.agent.crawl_cities()
+        lowered = [c.lower() for c in cities]
+        self.assertEqual(len(set(lowered)), len(lowered))
+
+    def test_the_queue_is_built_once_and_remembered(self):
         asked = []
         self.agent.services.towns_near = lambda base, miles: (
-            asked.append(base), ["A, CA"])[1]
-        self.agent.crawl_plan()
-        self.agent.crawl_plan()
+            asked.append(base), ["Socorro, TX"])[1]
+        self.agent.crawl_cities()
+        self.agent.crawl_cities()
         self.assertEqual(len(asked), 1)
 
-    def test_changing_the_territory_rebuilds_it(self):
-        """Moving the home town must not leave it crawling the old county."""
-        asked = []
+    def test_moving_home_rebuilds_the_queue(self):
         self.agent.services.towns_near = lambda base, miles: (
-            asked.append(base), ["A, CA"])[1]
-        self.agent.crawl_plan()
-        self.cfg["territory_base"] = "Atlanta, GA"
-        self.agent.crawl_plan()
-        self.assertEqual(asked, ["Los Angeles, CA", "Atlanta, GA"])
-        self.assertEqual(int(self.agent.db.get_kv("crawl_cursor")), 0)
+            ["Socorro, TX"] if "El Paso" in base else ["Troy, NY"])
+        self.agent.crawl_cities()
+        self.cfg["territory_base"] = "Albany, NY"
+        cities = self.agent.crawl_cities()
+        self.assertEqual(cities[:2], ["Albany, NY", "Troy, NY"])
+        self.assertEqual(int(self.agent.db.get_kv("crawl_city")), 0)
 
     def test_with_no_home_town_it_uses_the_address_they_already_gave(self):
-        """"Without me typing anything" has to mean exactly that."""
+        """"Without me clicking anything" has to mean exactly that."""
         self.cfg["territory_base"] = ""
         self.cfg["mailing_address"] = "12 Main St, Ellenville, NY 12428"
-        asked = []
-        self.agent.services.towns_near = lambda base, miles: (
-            asked.append(base), ["Ellenville, NY"])[1]
-        self.assertTrue(self.agent.crawl_plan())
-        self.assertEqual(asked, ["Ellenville, NY"])
+        self.assertEqual(self.agent.crawl_cities()[0], "Ellenville, NY")
 
-    def test_no_town_and_no_address_does_nothing_rather_than_guessing(self):
+    def test_with_nothing_at_all_it_still_crawls_the_country(self):
+        """Knowing nothing about them is not a reason to do nothing."""
         self.cfg["territory_base"] = ""
         self.cfg["mailing_address"] = ""
-        self.assertEqual(self.agent.crawl_plan(), [])
-        self.assertIn("home town", self.agent.crawl()["skipped"])
+        cities = self.agent.crawl_cities()
+        self.assertGreater(len(cities), 1000)
+        self.assertFalse(self.agent.crawl().get("skipped"))
 
     def test_it_carries_on_without_the_town_list(self):
-        """Out of Claude credit must not stop the crawl."""
-        self.cfg["territory_base"] = "Los Angeles, CA"
-
+        """Out of Claude credit must not stop the country crawl."""
         def boom(base, miles):
             raise self.core.ServiceError("$0 of API credit")
         self.agent.services.towns_near = boom
-        self.assertEqual(len(self.agent.crawl_plan()),
-                         self.agent.TILE_GRID ** 2)
+        cities = self.agent.crawl_cities()
+        self.assertEqual(cities[0], "El Paso, TX")
+        self.assertGreater(len(cities), 1000)
 
-    # -- the crawl -----------------------------------------------------------
+    # -- walking it ----------------------------------------------------------
 
-    def test_it_moves_on_rather_than_sweeping_the_same_spot(self):
+    def test_it_sweeps_several_spots_across_a_city_not_one(self):
+        """Google returns the twenty businesses nearest a point and no more,
+        so one point per city is one street corner per city."""
+        self.cfg["tiles_per_tick"] = 20
         self.agent.crawl()
+        places = {(lat, lng) for _, lat, lng in self.swept}
+        self.assertGreaterEqual(len(places), self.agent.TILE_GRID ** 2)
+
+    def test_it_moves_on_to_the_next_city_when_one_is_done(self):
+        self.cfg["tiles_per_tick"] = self.agent.TILE_GRID ** 2 + 2
         self.agent.crawl()
-        self.assertEqual(len(self.swept), 4)
-        self.assertEqual(len(set(self.swept)), 4)
+        self.assertIn("El Paso, TX", [label for label, _, _ in self.swept])
+        self.assertIn("Socorro, TX", [label for label, _, _ in self.swept])
+
+    def test_it_never_sweeps_the_same_spot_twice(self):
+        for _ in range(12):
+            self.agent.crawl()
+        self.assertEqual(len(set(self.swept)), len(self.swept))
 
     def test_it_picks_up_where_it_left_off_after_a_restart(self):
         self.agent.crawl()
@@ -454,23 +465,29 @@ class CrawlTest(unittest.TestCase):
         fresh.crawl()
         self.assertFalse(set(seen) & set(self.swept), "it must not start over")
 
-    def test_it_stops_once_the_map_is_covered(self):
-        for i in range(20):                      # enough leads banked to rest
-            self.agent.db.add_lead(place_id=f"q{i}", name=f"Biz {i}",
-                                   address="a", phone="p", category="c")
-        for _ in range(20):
-            self.agent.crawl()
-        before = len(self.swept)
+    def test_a_city_it_cannot_place_is_skipped_not_fatal(self):
+        self.agent.services.places_geocode = lambda area: None
         r = self.agent.crawl()
-        self.assertEqual(len(self.swept), before)
-        self.assertIn("covered", r["skipped"])
+        self.assertEqual(r["added"], 0)
+        self.assertGreater(int(self.agent.db.get_kv("crawl_city")), 0)
 
-    def test_but_it_goes_round_again_once_the_leads_run_down(self):
-        for _ in range(20):
-            self.agent.crawl()                   # no leads banked: keep going
-        before = len(self.swept)
+    def test_a_city_is_only_placed_on_the_map_once(self):
+        self.cfg["tiles_per_tick"] = 4
         self.agent.crawl()
-        self.assertGreater(len(self.swept), before)
+        self.agent.crawl()
+        self.assertEqual(self.placed.count("El Paso, TX"), 1)
+
+    def test_a_failing_spot_does_not_stop_the_crawl(self):
+        calls = []
+
+        def flaky(label, lat, lng, radius=0):
+            calls.append(label)
+            if len(calls) == 1:
+                raise self.core.ServiceError("Google said no")
+            return {"added": 1, "seen": 5}
+        self.agent.sweep_point = flaky
+        self.agent.crawl()
+        self.assertEqual(len(calls), 2)
 
     def test_it_stops_at_the_target_rather_than_hoarding(self):
         self.cfg["lead_target"] = 3
@@ -485,18 +502,40 @@ class CrawlTest(unittest.TestCase):
         self.agent.crawl()
         self.assertEqual(self.swept, [])
 
-    def test_a_failing_spot_does_not_stop_the_crawl(self):
-        calls = []
-
-        def flaky(label, lat, lng, radius=0):
-            calls.append(label)
-            if len(calls) == 1:
-                raise self.core.ServiceError("Google said no")
-            return {"added": 1, "seen": 5}
-        self.agent.sweep_point = flaky
-        self.agent.crawl()
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(int(self.agent.db.get_kv("crawl_cursor")), 2)
-
     def test_the_target_is_high_enough_to_be_worth_having(self):
         self.assertGreaterEqual(self.core.DEFAULT_CONFIG["lead_target"], 500)
+
+
+class CityListTest(unittest.TestCase):
+    """The list itself, since a wrong entry is a search that finds nothing."""
+
+    def setUp(self):
+        import solo_studio_agent as core
+        self.core = core
+
+    def test_every_state_is_covered(self):
+        self.assertEqual(len(self.core.US_CITIES_BY_STATE), 51)  # 50 + DC
+
+    def test_it_is_a_serious_list_not_a_token_one(self):
+        self.assertGreater(len(self.core.us_cities()), 1000)
+
+    def test_el_paso_is_in_it(self):
+        """The one that started this."""
+        self.assertIn("El Paso, TX", self.core.us_cities())
+
+    def test_every_entry_reads_as_city_and_state(self):
+        for city in self.core.us_cities():
+            with self.subTest(city=city):
+                self.assertRegex(city, r"^[A-Za-z][A-Za-z .'\-]*, [A-Z]{2}$")
+
+    def test_the_home_state_can_be_put_first(self):
+        self.assertTrue(self.core.us_cities("NM")[0].endswith(", NM"))
+
+    def test_an_unknown_state_is_not_an_error(self):
+        self.assertGreater(len(self.core.us_cities("ZZ")), 1000)
+
+    def test_the_state_is_read_off_a_town_name(self):
+        self.assertEqual(self.core._state_of("El Paso, TX"), "TX")
+        self.assertEqual(self.core._state_of("Ellenville, NY 12428"), "NY")
+        self.assertEqual(self.core._state_of("nowhere"), "")
+        self.assertEqual(self.core._state_of("Springfield, Illinois"), "")

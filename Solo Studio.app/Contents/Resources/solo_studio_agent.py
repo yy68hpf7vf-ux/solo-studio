@@ -235,6 +235,86 @@ def _google_meter_key() -> str:
     return "google_calls_" + datetime.now(timezone.utc).strftime("%Y-%m")
 
 
+# Every city JARVIS works through, largest first within each state. Names
+# only: a name is something to be sure of, whereas coordinates typed from
+# memory are a wrong search that costs money. Each one is looked up on the map
+# once, when the crawl reaches it, and remembered forever after.
+US_CITIES_BY_STATE = {
+    "AL": "Birmingham, Montgomery, Huntsville, Mobile, Tuscaloosa, Hoover, Dothan, Auburn, Decatur, Madison",
+    "AK": "Anchorage, Fairbanks, Juneau, Wasilla, Sitka, Ketchikan, Kenai, Palmer",
+    "AZ": "Phoenix, Tucson, Mesa, Chandler, Scottsdale, Glendale, Gilbert, Tempe, Peoria, Surprise, Yuma, Flagstaff, Goodyear, Casa Grande",
+    "AR": "Little Rock, Fayetteville, Fort Smith, Springdale, Jonesboro, Rogers, Conway, North Little Rock, Bentonville, Pine Bluff",
+    "CA": "Los Angeles, San Diego, San Jose, San Francisco, Fresno, Sacramento, Long Beach, Oakland, Bakersfield, Anaheim, Santa Ana, Riverside, Stockton, Irvine, Chula Vista, Fremont, Modesto, Fontana, Oxnard, Moreno Valley, Huntington Beach, Glendale, Santa Clarita, Garden Grove, Oceanside, Rancho Cucamonga, Ontario, Elk Grove, Corona, Lancaster, Palmdale, Salinas, Hayward, Pomona, Escondido, Sunnyvale, Torrance, Pasadena, Orange, Fullerton, Visalia, Roseville, Concord, Victorville, Santa Rosa, Vallejo, Berkeley, El Monte, Downey, Costa Mesa, Inglewood, Carlsbad, Fairfield, Ventura, Temecula, Antioch, Richmond, West Covina, Murrieta, Norwalk, Daly City, Burbank, Santa Maria, El Cajon, Rialto, San Mateo, Compton, Clovis, Jurupa Valley, Vista, South Gate, Mission Viejo, Vacaville, Carson, Hesperia, Redding, Santa Monica, Westminster, Santa Barbara, Chico, Whittier, Newport Beach, San Leandro, Hawthorne, Citrus Heights, Alhambra, Tracy, Livermore, Buena Park, Lakewood, Merced, Hemet, Chino, Menifee, Lake Forest, Napa, Redwood City, Bellflower, Indio, Tustin, Baldwin Park, Chino Hills, Mountain View, Alameda, Upland, San Ramon, Folsom, Pleasanton, Union City, Perris, Manteca, Lynwood, Apple Valley, Redlands, Turlock, Milpitas, Redondo Beach, Rancho Cordova, Yorba Linda, Palo Alto, Davis, Camarillo, Walnut Creek, Pittsburg, South San Francisco, Yuba City, San Clemente, Laguna Niguel, Pico Rivera, Montebello, Lodi, Madera, Santa Cruz, La Habra, Encinitas, Monterey Park, Tulare, Cupertino, Gardena, National City, Rocklin, Petaluma, Huntington Park, San Rafael, La Mesa, Arcadia, Fountain Valley, Diamond Bar, Woodland, Santee, Lake Elsinore, Porterville, Paramount, Eastvale, Rosemead, Hanford, Highland, Brentwood, Novato, Colton, Cathedral City, Delano, Yucaipa, Watsonville, Placentia, Glendora, Gilroy, Palm Desert, Cerritos, West Sacramento, Aliso Viejo, Poway, La Mirada, Rancho Santa Margarita, Cypress, Dublin, Covina, Azusa, Palm Springs, San Luis Obispo, Ceres, San Jacinto, Lincoln, Newark, Lompoc, El Centro, Danville, Bell Gardens, Coachella, Rancho Palos Verdes, San Bruno, Rohnert Park, Brea, La Puente, Campbell, San Gabriel, Beaumont, Los Banos, Adelanto, Culver City, Calexico, Stanton, La Quinta, Monrovia, Martinez, Hollister",
+    "CO": "Denver, Colorado Springs, Aurora, Fort Collins, Lakewood, Thornton, Arvada, Westminster, Pueblo, Centennial, Boulder, Greeley, Longmont, Loveland, Broomfield, Grand Junction, Castle Rock, Commerce City, Parker, Littleton",
+    "CT": "Bridgeport, New Haven, Hartford, Stamford, Waterbury, Norwalk, Danbury, New Britain, Bristol, Meriden, Milford, West Haven, Middletown, Norwich, Shelton, Torrington",
+    "DE": "Wilmington, Dover, Newark, Middletown, Smyrna, Milford, Seaford, Georgetown",
+    "FL": "Jacksonville, Miami, Tampa, Orlando, St. Petersburg, Hialeah, Port St. Lucie, Cape Coral, Tallahassee, Fort Lauderdale, Pembroke Pines, Hollywood, Gainesville, Miramar, Coral Springs, Palm Bay, West Palm Beach, Clearwater, Lakeland, Pompano Beach, Miami Gardens, Davie, Boca Raton, Sunrise, Deltona, Plantation, Palm Coast, Fort Myers, Largo, Melbourne, Deerfield Beach, Boynton Beach, Lauderhill, Weston, Kissimmee, Homestead, Delray Beach, Daytona Beach, Tamarac, North Miami, Wellington, Jupiter, Ocala, Port Orange, Margate, Coconut Creek, Sanford, Sarasota, Pensacola, Bradenton, Palm Beach Gardens, Pinellas Park, Coral Gables, Doral, Bonita Springs, Apopka, Titusville, North Port, Fort Pierce, Winter Haven, Altamonte Springs, Cutler Bay, North Lauderdale, Oakland Park, Greenacres, Ormond Beach, Clermont, New Smyrna Beach, Lake Worth, Winter Garden, Casselberry",
+    "GA": "Atlanta, Augusta, Columbus, Macon, Savannah, Athens, Sandy Springs, Roswell, Johns Creek, Albany, Warner Robins, Alpharetta, Marietta, Valdosta, Smyrna, Dunwoody, Rome, East Point, Milton, Gainesville, Peachtree Corners, Newnan, Douglasville, Kennesaw, Lawrenceville, Statesboro, Duluth, Stockbridge, Woodstock, Carrollton",
+    "HI": "Honolulu, Hilo, Kailua, Kapolei, Kaneohe, Waipahu, Pearl City, Mililani, Kahului, Ewa Beach",
+    "ID": "Boise, Meridian, Nampa, Idaho Falls, Pocatello, Caldwell, Coeur d'Alene, Twin Falls, Post Falls, Lewiston",
+    "IL": "Chicago, Aurora, Joliet, Naperville, Rockford, Springfield, Elgin, Peoria, Champaign, Waukegan, Cicero, Bloomington, Arlington Heights, Evanston, Schaumburg, Bolingbrook, Palatine, Skokie, Des Plaines, Orland Park, Tinley Park, Oak Lawn, Berwyn, Mount Prospect, Normal, Wheaton, Hoffman Estates, Oak Park, Downers Grove, Elmhurst, Glenview, DeKalb, Lombard, Belleville, Moline, Buffalo Grove, Bartlett, Urbana, Quincy, Crystal Lake",
+    "IN": "Indianapolis, Fort Wayne, Evansville, South Bend, Carmel, Fishers, Bloomington, Hammond, Gary, Lafayette, Muncie, Terre Haute, Kokomo, Noblesville, Anderson, Greenwood, Elkhart, Mishawaka, Lawrence, Jeffersonville, Columbus, Portage, New Albany, Richmond, Valparaiso, Goshen, Michigan City, Westfield",
+    "IA": "Des Moines, Cedar Rapids, Davenport, Sioux City, Iowa City, Waterloo, Council Bluffs, Ames, West Des Moines, Dubuque, Ankeny, Urbandale, Cedar Falls, Marion, Bettendorf, Mason City, Clinton, Burlington",
+    "KS": "Wichita, Overland Park, Kansas City, Olathe, Topeka, Lawrence, Shawnee, Manhattan, Lenexa, Salina, Hutchinson, Leavenworth, Leawood, Dodge City, Garden City, Emporia",
+    "KY": "Louisville, Lexington, Bowling Green, Owensboro, Covington, Richmond, Georgetown, Florence, Hopkinsville, Nicholasville, Elizabethtown, Henderson, Frankfort, Jeffersontown, Paducah",
+    "LA": "New Orleans, Baton Rouge, Shreveport, Lafayette, Lake Charles, Kenner, Bossier City, Monroe, Alexandria, Houma, Marrero, New Iberia, Slidell, Central, Ruston",
+    "ME": "Portland, Lewiston, Bangor, South Portland, Auburn, Biddeford, Sanford, Saco, Augusta, Westbrook",
+    "MD": "Baltimore, Columbia, Germantown, Silver Spring, Waldorf, Glen Burnie, Ellicott City, Frederick, Dundalk, Rockville, Bethesda, Gaithersburg, Towson, Bowie, Aspen Hill, Wheaton, Bel Air, Potomac, Severn, Hagerstown, Annapolis, Odenton, Catonsville, Salisbury",
+    "MA": "Boston, Worcester, Springfield, Cambridge, Lowell, Brockton, New Bedford, Quincy, Lynn, Fall River, Newton, Somerville, Lawrence, Framingham, Haverhill, Waltham, Malden, Brookline, Medford, Taunton, Chicopee, Weymouth, Revere, Peabody, Methuen, Barnstable, Pittsfield, Attleboro, Everett, Salem, Westfield, Leominster, Fitchburg, Beverly, Holyoke, Marlborough, Woburn, Chelsea",
+    "MI": "Detroit, Grand Rapids, Warren, Sterling Heights, Ann Arbor, Lansing, Flint, Dearborn, Livonia, Troy, Westland, Farmington Hills, Kalamazoo, Wyoming, Southfield, Rochester Hills, Taylor, Saint Clair Shores, Pontiac, Dearborn Heights, Royal Oak, Novi, Battle Creek, Saginaw, Kentwood, East Lansing, Roseville, Portage, Midland, Muskegon, Lincoln Park, Bay City, Jackson, Holland, Port Huron",
+    "MN": "Minneapolis, Saint Paul, Rochester, Duluth, Bloomington, Brooklyn Park, Plymouth, Woodbury, Maple Grove, Saint Cloud, Eagan, Eden Prairie, Coon Rapids, Blaine, Burnsville, Lakeville, Minnetonka, Apple Valley, Edina, Saint Louis Park, Mankato, Moorhead, Shakopee, Maplewood, Cottage Grove, Richfield",
+    "MS": "Jackson, Gulfport, Southaven, Hattiesburg, Biloxi, Meridian, Tupelo, Olive Branch, Greenville, Horn Lake, Pearl, Madison, Starkville, Clinton, Columbus",
+    "MO": "Kansas City, Saint Louis, Springfield, Columbia, Independence, Lee's Summit, O'Fallon, Saint Joseph, Saint Charles, Blue Springs, Saint Peters, Florissant, Joplin, Chesterfield, Jefferson City, Cape Girardeau, Wildwood, University City, Ballwin, Raytown, Liberty",
+    "MT": "Billings, Missoula, Great Falls, Bozeman, Butte, Helena, Kalispell, Havre, Anaconda, Belgrade",
+    "NE": "Omaha, Lincoln, Bellevue, Grand Island, Kearney, Fremont, Hastings, Norfolk, North Platte, Papillion",
+    "NV": "Las Vegas, Henderson, Reno, North Las Vegas, Sparks, Carson City, Fernley, Elko, Mesquite, Boulder City",
+    "NH": "Manchester, Nashua, Concord, Derry, Dover, Rochester, Salem, Merrimack, Londonderry, Hudson, Keene, Portsmouth",
+    "NJ": "Newark, Jersey City, Paterson, Elizabeth, Edison, Woodbridge, Lakewood, Toms River, Hamilton, Trenton, Clifton, Camden, Brick, Cherry Hill, Passaic, Middletown, Union City, Old Bridge, Gloucester, East Orange, Bayonne, Franklin, North Bergen, Vineland, Union, Piscataway, New Brunswick, Jackson, Wayne, Irvington, Parsippany, Howell, Perth Amboy, Hoboken, Plainfield, West New York, Washington, East Brunswick, Bloomfield, West Orange",
+    "NM": "Albuquerque, Las Cruces, Rio Rancho, Santa Fe, Roswell, Farmington, Clovis, Hobbs, Alamogordo, Carlsbad, Gallup, Los Lunas, Deming",
+    "NY": "New York, Buffalo, Yonkers, Rochester, Syracuse, Albany, New Rochelle, Mount Vernon, Schenectady, Utica, White Plains, Hempstead, Troy, Niagara Falls, Binghamton, Freeport, Valley Stream, Long Beach, Rome, North Tonawanda, Ithaca, Poughkeepsie, Jamestown, Elmira, Newburgh, Middletown, Auburn, Watertown, Glen Cove, Saratoga Springs, Kingston, Peekskill, Lockport, Plattsburgh, Cortland, Oswego, Beacon, Batavia, Ellenville, Monticello, Liberty, Newark, Geneva, Canandaigua, Oneonta, Amsterdam, Gloversville, Johnstown, Hudson, Catskill",
+    "NC": "Charlotte, Raleigh, Greensboro, Durham, Winston-Salem, Fayetteville, Cary, Wilmington, High Point, Concord, Asheville, Greenville, Gastonia, Jacksonville, Chapel Hill, Rocky Mount, Huntersville, Burlington, Wilson, Kannapolis, Apex, Hickory, Wake Forest, Indian Trail, Mooresville, Goldsboro, Monroe, Salisbury, Matthews, New Bern, Sanford, Cornelius, Garner, Thomasville, Statesville, Asheboro, Mint Hill, Kernersville, Morrisville, Lumberton",
+    "ND": "Fargo, Bismarck, Grand Forks, Minot, West Fargo, Williston, Dickinson, Mandan, Jamestown, Wahpeton",
+    "OH": "Columbus, Cleveland, Cincinnati, Toledo, Akron, Dayton, Parma, Canton, Youngstown, Lorain, Hamilton, Springfield, Kettering, Elyria, Lakewood, Cuyahoga Falls, Middletown, Euclid, Newark, Mansfield, Mentor, Beavercreek, Cleveland Heights, Strongsville, Dublin, Fairfield, Findlay, Warren, Lancaster, Lima, Huber Heights, Westerville, Marion, Grove City, Reynoldsburg, Delaware, Brunswick, Stow, Upper Arlington, Gahanna",
+    "OK": "Oklahoma City, Tulsa, Norman, Broken Arrow, Lawton, Edmond, Moore, Midwest City, Enid, Stillwater, Muskogee, Bartlesville, Owasso, Shawnee, Ponca City, Ardmore, Duncan, Yukon, Del City, Bixby",
+    "OR": "Portland, Salem, Eugene, Gresham, Hillsboro, Beaverton, Bend, Medford, Springfield, Corvallis, Albany, Tigard, Lake Oswego, Keizer, Grants Pass, Oregon City, McMinnville, Redmond, Tualatin, West Linn, Woodburn, Newberg, Forest Grove, Roseburg, Klamath Falls, Ashland",
+    "PA": "Philadelphia, Pittsburgh, Allentown, Erie, Reading, Scranton, Bethlehem, Lancaster, Harrisburg, York, Altoona, Wilkes-Barre, Chester, Williamsport, Easton, Lebanon, Hazleton, New Castle, Johnstown, Norristown, McKeesport, Chambersburg, Carlisle, Hanover, Pottstown, Sharon, Bloomsburg, West Chester, Butler, Washington, Meadville, Indiana, Greensburg, Uniontown, Oil City, Warren, Bradford, Sunbury, Lock Haven, Pottsville",
+    "RI": "Providence, Warwick, Cranston, Pawtucket, East Providence, Woonsocket, Newport, Central Falls, Westerly, Bristol",
+    "SC": "Charleston, Columbia, North Charleston, Mount Pleasant, Rock Hill, Greenville, Summerville, Sumter, Goose Creek, Hilton Head Island, Florence, Spartanburg, Myrtle Beach, Aiken, Anderson, Greer, Mauldin, Greenwood, North Augusta, Easley",
+    "SD": "Sioux Falls, Rapid City, Aberdeen, Brookings, Watertown, Mitchell, Yankton, Pierre, Huron, Vermillion",
+    "TN": "Nashville, Memphis, Knoxville, Chattanooga, Clarksville, Murfreesboro, Franklin, Jackson, Johnson City, Bartlett, Hendersonville, Kingsport, Collierville, Smyrna, Cleveland, Brentwood, Germantown, Columbia, La Vergne, Gallatin, Cookeville, Mount Juliet, Lebanon, Morristown, Oak Ridge, Maryville, Bristol, Farragut",
+    "TX": "Houston, San Antonio, Dallas, Austin, Fort Worth, El Paso, Arlington, Corpus Christi, Plano, Laredo, Lubbock, Garland, Irving, Amarillo, Grand Prairie, Brownsville, McKinney, Frisco, Pasadena, Killeen, McAllen, Mesquite, Midland, Denton, Waco, Carrollton, Round Rock, Abilene, Pearland, Richardson, Odessa, Sugar Land, College Station, Beaumont, Lewisville, Tyler, League City, San Angelo, Allen, Wichita Falls, Longview, Edinburg, Mission, Bryan, Baytown, Pharr, Temple, Missouri City, Flower Mound, Harlingen, North Richland Hills, Victoria, Conroe, New Braunfels, Mansfield, Cedar Park, Rowlett, Port Arthur, Euless, Georgetown, Pflugerville, DeSoto, San Marcos, Grapevine, Bedford, Galveston, Cedar Hill, Texas City, Wylie, Haltom City, Keller, Coppell, Rockwall, Huntsville, Duncanville, Sherman, The Colony, Burleson, Hurst, Lancaster, Texarkana, Friendswood, Weslaco, Socorro, Horizon City, Canutillo, San Elizario, Anthony, Fabens, Clint, Vinton",
+    "UT": "Salt Lake City, West Valley City, Provo, West Jordan, Orem, Sandy, Ogden, St. George, Layton, South Jordan, Lehi, Millcreek, Taylorsville, Logan, Murray, Draper, Bountiful, Riverton, Herriman, Spanish Fork, Roy, Pleasant Grove, Kearns, Tooele, Cottonwood Heights, Springville",
+    "VT": "Burlington, South Burlington, Rutland, Barre, Montpelier, Winooski, St. Albans, Newport, Vergennes, Middlebury",
+    "VA": "Virginia Beach, Chesapeake, Norfolk, Arlington, Richmond, Newport News, Alexandria, Hampton, Roanoke, Portsmouth, Suffolk, Lynchburg, Harrisonburg, Charlottesville, Danville, Manassas, Petersburg, Fredericksburg, Winchester, Salem, Staunton, Herndon, Hopewell, Fairfax, Waynesboro, Blacksburg, Christiansburg, Radford, Bristol, Martinsville",
+    "WA": "Seattle, Spokane, Tacoma, Vancouver, Bellevue, Kent, Everett, Renton, Federal Way, Spokane Valley, Yakima, Kirkland, Bellingham, Kennewick, Auburn, Pasco, Marysville, Lakewood, Redmond, Shoreline, Richland, Sammamish, Burien, Olympia, Lacey, Edmonds, Puyallup, Bremerton, Longview, Wenatchee, Mount Vernon, Walla Walla, Pullman, Des Moines, SeaTac, Bothell, Issaquah, Mercer Island",
+    "WV": "Charleston, Huntington, Morgantown, Parkersburg, Wheeling, Martinsburg, Fairmont, Beckley, Clarksburg, Weirton, Bluefield, Hurricane",
+    "WI": "Milwaukee, Madison, Green Bay, Kenosha, Racine, Appleton, Waukesha, Eau Claire, Oshkosh, Janesville, West Allis, La Crosse, Sheboygan, Wauwatosa, Fond du Lac, New Berlin, Wausau, Brookfield, Beloit, Greenfield, Manitowoc, Sun Prairie, Superior, Stevens Point, Neenah, Fitchburg, Mount Pleasant",
+    "WY": "Cheyenne, Casper, Laramie, Gillette, Rock Springs, Sheridan, Green River, Evanston, Riverton, Cody",
+    "DC": "Washington",
+}
+
+
+def us_cities(first_state: str = "") -> list[str]:
+    """Every city in the country as "City, ST", the given state first.
+
+    The order is the whole point: their own state before anywhere else, and
+    the biggest cities of each state before its smaller ones, so the crawl
+    starts where they actually are and works outwards.
+    """
+    states = sorted(US_CITIES_BY_STATE)
+    first = (first_state or "").upper()
+    if first in US_CITIES_BY_STATE:
+        states.remove(first)
+        states.insert(0, first)
+    out = []
+    for state in states:
+        for city in US_CITIES_BY_STATE[state].split(","):
+            city = city.strip()
+            if city:
+                out.append(f"{city}, {state}")
+    return out
+
+
 DEFAULT_TRADES = [
     "plumbers", "electricians", "landscapers", "tree service", "roofers",
     "handyman", "house cleaning", "towing", "junk removal", "septic service",
@@ -1041,6 +1121,13 @@ def _town_of(address: str) -> str:
     if len(state) == 2 and state.isalpha():
         return f"{town}, {state.upper()}"
     return town
+
+
+def _state_of(place: str) -> str:
+    """The two-letter state out of "Ellenville, NY", or "" if there isn't one."""
+    tail = (place or "").split(",")[-1].strip()
+    first = tail.split()[0] if tail.split() else ""
+    return first.upper() if len(first) == 2 and first.isalpha() else ""
 
 
 def _domain_of(url: str) -> str:
@@ -2904,74 +2991,66 @@ class Agent:
                  round(lng + j * self.TILE_STEP_DEG / shrink, 6)]
                 for i in span for j in span]
 
-    def crawl_plan(self) -> list[list]:
-        """Every spot on the map worth visiting, worked out once.
+    def crawl_cities(self) -> list[str]:
+        """Every city to work through, in order.
 
-        Built from the towns around home and kept in the database, so the
-        crawl picks up exactly where it left off across restarts.
+        Home first, then the towns around it, then the whole country — their
+        own state before anywhere else, biggest cities first within each. The
+        list is names only; each one is placed on the map when the crawl
+        reaches it, so starting the crawl costs nothing.
         """
         cfg = self.config
-        # Their home town if they set one; otherwise the postal address they
-        # already had to give for the emails. Either way, no extra typing.
-        area = ((cfg.get("territory_base") or "").strip()
+        home = ((cfg.get("territory_base") or "").strip()
                 or _town_of(cfg.get("mailing_address")))
-        if not area:
-            return []
-        miles = int(cfg.get("territory_miles", 30) or 30)
-        signature = f"{area}|{miles}|{self.TILE_GRID}|{self.TILE_STEP_DEG}"
-        if self.db.get_kv("crawl_signature") == signature:
+        signature = f"{home}|{cfg.get('territory_miles', 30)}|{len(US_CITIES_BY_STATE)}"
+        if self.db.get_kv("crawl_cities_sig") == signature:
             try:
-                return json.loads(self.db.get_kv("crawl_plan") or "[]")
+                cached = json.loads(self.db.get_kv("crawl_cities") or "[]")
+                if cached:
+                    return cached
             except ValueError:
                 pass
 
-        try:
-            towns = self.services.towns_near(area, miles)
-        except Exception as e:
-            self.db.log(None, "crawl_note",
-                        f"Couldn't list the towns near {area} "
-                        f"({explain(e, 150)}) — crawling {area} itself.")
-            towns = []
-        if area not in towns:
-            towns.append(area)
-
-        plan = []
-        for town in towns:
+        order = []
+        if home:
+            order.append(home)
             try:
-                point = self.town_centre(town)
+                order.extend(self.services.towns_near(
+                    home, int(cfg.get("territory_miles", 30) or 30)))
             except Exception as e:
                 self.db.log(None, "crawl_note",
-                            f"Couldn't place {town}: {explain(e, 120)}")
-                continue
-            if point:
-                plan.extend(self._tiles_for(town, point[0], point[1]))
-        # Neighbouring towns overlap, and two names can resolve to the same
-        # spot. Sweeping the same ground twice finds nothing and still costs a
-        # call, so keep one tile per point.
-        seen_points = set()
-        unique = []
-        for town, lat, lng in plan:
-            here = (lat, lng)
-            if here in seen_points:
-                continue
-            seen_points.add(here)
-            unique.append([town, lat, lng])
-        plan = unique
-        self.db.set_kv("crawl_plan", json.dumps(plan))
-        self.db.set_kv("crawl_signature", signature)
-        self.db.set_kv("crawl_cursor", "0")
+                            f"Couldn't list the towns near {home} "
+                            f"({explain(e, 130)}) — going straight to the "
+                            "city list instead.")
+        order.extend(us_cities(_state_of(home)))
+
+        seen, cities = set(), []
+        for city in order:
+            key = city.lower().strip()
+            if key and key not in seen:
+                seen.add(key)
+                cities.append(city)
+        self.db.set_kv("crawl_cities", json.dumps(cities))
+        self.db.set_kv("crawl_cities_sig", signature)
+        self.db.set_kv("crawl_city", "0")
+        self.db.set_kv("crawl_tile", "0")
         self.db.log(None, "crawl_note",
-                    f"Mapped {len(towns)} towns around {area} into "
-                    f"{len(plan)} areas to sweep.")
-        return plan
+                    f"{len(cities)} cities queued, starting at "
+                    f"{cities[0] if cities else 'nowhere'}.")
+        return cities
+
+    def _kv_int(self, key: str) -> int:
+        try:
+            return int(self.db.get_kv(key) or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def crawl(self) -> dict:
-        """Work steadily across the map, a few spots per round, on its own.
+        """Work across the country on its own, a few spots each round.
 
-        This is the difference between an app that tops itself up to fifteen
-        leads and one that goes and covers the county. It stops when the map
-        is covered, and starts again only if the leads run down — sweeping the
-        same ground twice finds nothing and still costs money.
+        City by city, state by state: place the city on the map once, sweep a
+        grid of spots across it, move to the next. Progress lives in the
+        database, so it carries on across restarts rather than starting over.
         """
         cfg = self.config
         if not cfg.get("auto_search_enabled"):
@@ -2982,37 +3061,65 @@ class Agent:
         if waiting >= target:
             return {"skipped": f"{waiting} leads banked, which is the target"}
 
-        plan = self.crawl_plan()
-        if not plan:
-            return {"skipped": "no home town set"}
+        cities = self.crawl_cities()
+        if not cities:
+            return {"skipped": "nowhere to start"}
 
-        try:
-            cursor = int(self.db.get_kv("crawl_cursor") or 0)
-        except (TypeError, ValueError):
-            cursor = 0
-        if cursor >= len(plan):
-            floor = max(1, int(cfg.get("lead_floor", 15) or 15))
-            if waiting >= floor:
-                return {"skipped": "whole map covered", "done": True}
-            cursor = 0          # round again: the leads have run down
-
+        city_i = self._kv_int("crawl_city") % len(cities)
+        tile_i = self._kv_int("crawl_tile")
         per_tick = max(1, int(cfg.get("tiles_per_tick", 3) or 3))
         added = 0
-        done = 0
-        for town, lat, lng in plan[cursor:cursor + per_tick]:
+        swept = 0
+        city = cities[city_i]
+
+        for _ in range(per_tick):
+            city = cities[city_i]
+            tiles = self._tiles_of(city)
+            if not tiles:                      # couldn't place it: move along
+                city_i = (city_i + 1) % len(cities)
+                tile_i = 0
+                continue
+            if tile_i >= len(tiles):
+                city_i = (city_i + 1) % len(cities)
+                tile_i = 0
+                continue
+            town, lat, lng = tiles[tile_i]
             try:
                 added += self.sweep_point(town, lat, lng,
                                           radius=self.TILE_RADIUS)["added"]
             except Exception as e:
                 self.db.log(None, "crawl_failed", explain(e, 250))
-            done += 1
-        cursor += done
-        self.db.set_kv("crawl_cursor", str(cursor))
+            tile_i += 1
+            swept += 1
+
+        self.db.set_kv("crawl_city", str(city_i))
+        self.db.set_kv("crawl_tile", str(tile_i))
         if added:
             self.db.log(None, "crawl",
-                        f"Swept {done} more areas ({cursor} of {len(plan)}) — "
-                        f"{added} new leads.")
-        return {"added": added, "at": cursor, "of": len(plan)}
+                        f"{city} (city {city_i + 1} of {len(cities)}) — "
+                        f"{added} new leads from {swept} spots.")
+        return {"added": added, "city": city, "at": city_i + 1,
+                "of": len(cities), "swept": swept}
+
+    def _tiles_of(self, city: str) -> list[list]:
+        """The grid of spots covering one city, worked out once."""
+        key = "tiles:" + city.lower().strip()
+        cached = self.db.get_kv(key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except ValueError:
+                pass
+        try:
+            point = self.town_centre(city)
+        except Exception as e:
+            self.db.log(None, "crawl_note",
+                        f"Couldn't place {city}: {explain(e, 120)}")
+            self.db.set_kv(key, "[]")
+            return []
+        tiles = self._tiles_for(city, point[0], point[1]) if point else []
+        self.db.set_kv(key, json.dumps(tiles))
+        return tiles
 
     # -- the hunt ----------------------------------------------------------
 
