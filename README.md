@@ -3,10 +3,9 @@
 An automated lead-gen + sales pipeline for a one-person web design studio.
 
 Dark by design — indigo ground, hot pink accent, soft glass panels and
-rounded corners. The backdrop is a still wash of colour: there was a drifting
-light show here for a while, and it was taken out again. Panels still lean
-very slightly toward the pointer and catch a highlight, and turning on Reduce
-Motion in macOS or iOS stops even that.
+rounded corners. Nothing moves on its own and nothing moves under the pointer:
+there was a drifting light show and a tilt-on-hover here for a while, and both
+were taken out again.
 
 **What it does, end to end:**
 
@@ -79,6 +78,18 @@ left. Work down the list in order:
 Instagram page counts — it has nowhere of its own to send a customer, which is
 the whole pitch, and someone there already tried, which makes it a warmer lead
 than a blank listing. The approve screen shows which is which.
+
+**Just type a town.** Put "Los Angeles, CA" in the box and JARVIS goes hunting:
+he works out the towns around it, tries a different trade in each, and stops as
+soon as he has enough — so a good area costs two or three searches, not twelve.
+Name a trade as well ("plumbers in Riverside, CA") and he runs that first, then
+goes hunting anyway if it turns up nothing. He runs in the background and the
+page updates itself when he's back.
+
+This exists because searching a business directory for a city name returns the
+city and its biggest firms, every one of which has a website — an empty result
+that looks like a broken app. It isn't; it's the wrong search, and the app
+should be the one that knows that.
 
 **Where the leads are.** Not in the city centre. Type your city into the
 territory builder and it works outwards to the small towns and suburbs around

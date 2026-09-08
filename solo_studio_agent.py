@@ -2275,6 +2275,84 @@ class Agent:
 
     # -- background tick ---------------------------------------------------
 
+    # -- the hunt ----------------------------------------------------------
+
+    def hunt(self, area: str, want: int = 8, budget: int = 12) -> dict:
+        """Go and find leads in an area without being told what to look for.
+
+        Given nothing but "Los Angeles", work out the towns around it and the
+        trades worth trying, then keep searching until enough new leads turn
+        up or the budget of searches runs out. Stops the moment it has enough,
+        so a good area costs two or three searches, not twelve.
+
+        Why this exists: typing a city into a business search returns the
+        city, and the biggest, best-known firms in it — every one of which has
+        a website. Nobody would guess that from an empty result, and the
+        honest answer ("search smaller places, one trade at a time") is work
+        the app should be doing itself.
+        """
+        area = (area or "").strip()
+        if not area:
+            return {"ok": False, "added": 0, "summary": "No area given."}
+
+        towns, town_note = [], ""
+        try:
+            miles = int(self.config.get("territory_miles", 30) or 30)
+            towns = self.services.towns_near(area, miles)
+        except Exception as e:
+            town_note = ("Couldn't work out the towns nearby (%s), so this "
+                         "searched %s itself." % (explain(e, 120), area))
+        if area not in towns:
+            towns.append(area)          # the place they asked for, searched last
+
+        trades = [t.strip() for t in
+                  (self.config.get("trades") or "").splitlines() if t.strip()]
+        trades = trades or list(DEFAULT_TRADES)
+
+        # Same rotation the saved list uses: sweep the towns, changing trade
+        # each pass, so a short hunt covers ground instead of one postcode.
+        queries = [f"{trades[(j + k) % len(trades)]} in {towns[j]}"
+                   for k in range(len(trades)) for j in range(len(towns))]
+
+        added = seen = ran = 0
+        best = []
+        for query in queries[:budget]:
+            ran += 1
+            try:
+                r = self.find_leads(query)
+            except Exception as e:
+                self.db.log(None, "hunt_failed",
+                            f"{query!r}: {explain(e, 250)}"[:400])
+                continue
+            added += r["added"]
+            seen += r["seen"]
+            if r["added"]:
+                best.append(f"{r['added']} in {query.split(' in ', 1)[-1]}")
+            if added >= want:
+                break
+
+        if added:
+            summary = ("Found %d new lead%s — %s. Looked at %d businesses "
+                       "across %d search%s."
+                       % (added, "" if added == 1 else "s", ", ".join(best[:4]),
+                          seen, ran, "" if ran == 1 else "es"))
+        elif seen:
+            summary = ("No luck: %d businesses across %d searches near %s and "
+                       "they all had websites already. Try a different trade, "
+                       "or somewhere further out."
+                       % (seen, ran, area))
+        else:
+            summary = ("Google returned nothing at all for %s — check the "
+                       "spelling, and include the state." % area)
+        if town_note:
+            summary += " " + town_note
+        self.db.log(None, "hunt", summary)
+        if added:
+            self._notify("%d new leads found" % added,
+                         "JARVIS went hunting near %s." % area, tags="mag")
+        return {"ok": True, "added": added, "seen": seen, "searched": ran,
+                "towns": len(towns), "summary": summary}
+
     def run_saved_searches(self, force: bool = False) -> dict:
         """Run the saved searches if they're due, queuing what's found for
         approval. Never emails anyone — discovery only."""

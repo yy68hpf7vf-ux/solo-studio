@@ -254,6 +254,15 @@ class PhoneGateTest(unittest.TestCase):
         self.assertIn("body::before", html)
         self.assertIn("gradient", html)
 
+    def test_nothing_moves_when_the_pointer_goes_over_it(self):
+        """Panels used to tilt toward the cursor and catch a travelling
+        highlight. Both are out."""
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        for gone in ("pointermove", ".lift", "preserve-3d", "--mx", "rotateX"):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, html)
+
     def test_the_live_poll_does_not_call_into_what_was_removed(self):
         html = self.client.get(
             "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()

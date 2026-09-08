@@ -318,27 +318,9 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
    the compositor and never touched again. There was a drifting aurora here;
    it was asked for, then asked to go. */
 
-/* Depth: panels sit above the light and lean very slightly toward the pointer.
-   Kept under two degrees — enough to feel physical, not enough to smear text. */
-.card,.stat{transform-style:preserve-3d;
-  transition:transform .35s cubic-bezier(.22,.61,.36,1),
-             box-shadow .35s, border-color .35s}
-.card.lift{box-shadow:0 1px 0 rgba(210,195,255,.08) inset,
-  0 22px 62px rgba(0,0,0,.55), 0 0 46px rgba(244,114,182,.14);
-  border-color:rgba(244,114,182,.22)}
-.stat.lift{border-color:rgba(244,114,182,.3);
-  box-shadow:0 10px 30px rgba(0,0,0,.45)}
-/* the specular sheen that tracks the pointer across a panel */
-.card{position:relative;overflow:hidden}
-.card::after{content:"";position:absolute;inset:0;pointer-events:none;
-  opacity:0;transition:opacity .35s;border-radius:inherit;
-  background:radial-gradient(420px circle at var(--mx,50%) var(--my,0%),
-    rgba(244,114,182,.10), transparent 62%)}
-.card.lift::after{opacity:1}
-
-@media (prefers-reduced-motion:reduce){
-  .card,.stat{transition:none}
-}
+/* Panels used to tilt toward the pointer and catch a moving highlight. Both
+   are gone: nothing here moves because the mouse passed over it. */
+.card{position:relative}
 
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
@@ -509,36 +491,6 @@ td a:hover{color:var(--acc)}
 <div id="live-pill" hidden>New activity — tap to refresh</div>
 <span id="live-stamp" hidden data-stamp="{{ live_stamp }}"></span>
 <script>
-/* Panels lean toward the pointer and catch a highlight — the depth you can
-   feel rather than see. Pointer devices only, and never under reduced motion. */
-(function () {
-  var slow = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
-  if (slow && slow.matches) return;
-  if (!window.matchMedia || !matchMedia('(hover: hover) and (pointer: fine)').matches) return;
-
-  function bind(el, maxTilt) {
-    el.addEventListener('pointermove', function (e) {
-      var r = el.getBoundingClientRect();
-      var cx = (e.clientX - r.left) / r.width, cy = (e.clientY - r.top) / r.height;
-      el.style.setProperty('--mx', (cx * 100).toFixed(1) + '%');
-      el.style.setProperty('--my', (cy * 100).toFixed(1) + '%');
-      el.style.transform =
-        'perspective(1100px) rotateX(' + ((0.5 - cy) * maxTilt).toFixed(2) + 'deg)' +
-        ' rotateY(' + ((cx - 0.5) * maxTilt).toFixed(2) + 'deg)' +
-        ' translateZ(0)';
-      el.classList.add('lift');
-    }, { passive: true });
-    el.addEventListener('pointerleave', function () {
-      el.style.transform = '';
-      el.classList.remove('lift');
-    });
-  }
-  document.querySelectorAll('.card').forEach(function (el) { bind(el, 1.6); });
-  document.querySelectorAll('.stat').forEach(function (el) { bind(el, 5); });
-})();
-</script>
-
-<script>
 /* Keeps ordinary pages current without throwing away anything you're typing:
    reloads on its own when idle, otherwise offers a tap-to-refresh pill. */
 (function () {
@@ -674,14 +626,30 @@ get started — nothing works until then.</div>
 
 <div class="card">
 <h2>Find new leads</h2>
+{% if hunt.running %}
+<div class="note info" style="margin-bottom:12px">
+  <b>JARVIS is out hunting near {{ hunt.area }}.</b>
+  <div class="muted" style="margin-top:3px">He works through the towns around
+  it, a different trade each time, and stops as soon as he has enough. Takes a
+  minute; this page updates itself.</div>
+</div>
+{% elif hunt.summary %}
+<div class="note info" style="margin-bottom:12px">
+  <b>JARVIS is back.</b>
+  <div class="muted" style="margin-top:3px">{{ hunt.summary }}</div>
+</div>
+{% endif %}
 <form method="post" action="{{ url_for('find_leads') }}" style="display:flex;gap:10px">
   <input type="text" name="query" required
-    placeholder='e.g. "plumbers in Riverside, CA" — businesses with no website are kept'>
-  <button class="btn btn-primary" style="white-space:nowrap">Search Google Places</button>
+    placeholder='A town — "Los Angeles, CA" — and JARVIS works out the rest'>
+  <button class="btn btn-primary" style="white-space:nowrap">Find me leads</button>
 </form>
-<p class="muted" style="margin-bottom:0">Google Places doesn’t publish email
-addresses, so new leads need an email added (look them up — Yelp, Facebook,
-phone call) before outreach can go out. Found businesses queue up on the
+<p class="muted" style="margin-bottom:0">Type just a place and JARVIS hunts it:
+the towns around it, one trade at a time, until he has some. Name a trade too
+(“plumbers in Riverside, CA”) and he runs that one first, then goes hunting
+anyway if it turns up nothing. Only businesses with no website of their own are
+kept — a Facebook page counts as no website. They need an email address added
+before outreach can go out, and queue up on the
 <a href="{{ url_for('approve_queue') }}">Approve</a> page.</p>
 <div style="margin-top:10px">
 <form class="inline" method="post" action="{{ url_for('run_searches') }}">
@@ -2370,8 +2338,8 @@ def health():
 
 def _live_snapshot() -> dict:
     """What the pages poll. The first three drive the refresh pill (see
-    _live_stamp); the rest feed the living backdrop, so the room reacts to the
-    business rather than to nothing."""
+    _live_stamp) — which is also what brings the page back when JARVIS finishes
+    a hunt; the rest are read by the JARVIS screen."""
     db = STATE.db
     latest = db.recent_events(1)
     leads = db.all_leads()
@@ -2630,7 +2598,7 @@ def dashboard():
     return _render(DASHBOARD, leads=leads, today_line=core.line_for_today(),
                    stage_counts=[(s, counts[s]) for s in order],
                    attention=db.attention_events(), configured=configured,
-                   findings=current_findings())
+                   findings=current_findings(), hunt=dict(HUNT))
 
 
 
@@ -3381,17 +3349,80 @@ def _flash_result(result: dict, ok_msg: str):
         flash(result.get("error", "Something went wrong."), "err")
 
 
+# JARVIS hunting takes a minute — a dozen searches, each of them a round trip
+# to Google — so it runs in its own thread and the page watches it, rather than
+# holding a request open long enough for the browser to give up.
+HUNT = {"running": False, "area": "", "summary": ""}
+_hunt_lock = threading.Lock()
+
+
+def _start_hunt(area: str) -> bool:
+    """Send JARVIS off after leads. False if he is already out."""
+    with _hunt_lock:
+        if HUNT["running"]:
+            return False
+        HUNT.update(running=True, area=area, summary="")
+
+    def go():
+        try:
+            summary = STATE.agent.hunt(area)["summary"]
+        except Exception as e:
+            summary = core.explain(e, 300)
+        with _hunt_lock:
+            HUNT.update(running=False, summary=summary)
+
+    threading.Thread(target=go, daemon=True, name="solo-studio-hunt").start()
+    return True
+
+
+def _names_a_trade(query: str) -> bool:
+    """Does this read as "what, where" rather than just "where"?
+
+    A bare place name is the trap: searching a business directory for "Los
+    Angeles" returns the city and the biggest firms in it, every one of which
+    has a website, and the empty result looks like the app is broken.
+    """
+    low = " %s " % query.lower()
+    if " in " in low:
+        return True
+    return any(" %s " % t.lower() in low or low.strip() == t.lower()
+               for t in core.DEFAULT_TRADES)
+
+
 @app.post("/action/find_leads")
 def find_leads():
     query = (request.form.get("query") or "").strip()
     if not query:
         flash("Type a search first.", "err")
         return redirect(url_for("dashboard"))
+
+    # Just a place? Don't run a search that cannot work — go hunting.
+    if not _names_a_trade(query):
+        if _start_hunt(query):
+            flash(f"JARVIS is out hunting near {query}. This takes a minute — "
+                  "the page updates itself when he's back.", "ok")
+        else:
+            flash(f"JARVIS is already out hunting near {HUNT['area']}.", "err")
+        return redirect(url_for("dashboard"))
+
     try:
         r = STATE.agent.find_leads(query)
-        flash(core.describe_search(r), "ok" if r["added"] else "err")
     except Exception as e:
         flash(core.explain(e, 300), "err")
+        return redirect(url_for("dashboard"))
+
+    if r["added"]:
+        flash(core.describe_search(r), "ok")
+        return redirect(url_for("dashboard"))
+
+    # Nothing new. Rather than leave them with an empty result, go and look
+    # properly: other trades, the towns around it, until something turns up.
+    area = query.split(" in ", 1)[1].strip() if " in " in query else query
+    if _start_hunt(area):
+        flash(core.describe_search(r) + f" JARVIS is now hunting near {area} "
+              "on his own — the page updates itself when he's back.", "ok")
+    else:
+        flash(core.describe_search(r), "err")
     return redirect(url_for("dashboard"))
 
 
