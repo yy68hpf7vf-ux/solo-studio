@@ -243,15 +243,16 @@ def _autopilot_loop():
         time.sleep(5)
         try:
             cfg = STATE.config
-            if not cfg.get("autopilot_enabled"):
-                continue
-            if not cfg.get("inkbox_api_key"):
-                continue
             interval = max(30, int(cfg.get("poll_interval_seconds", 120)))
             if time.time() - last_run < interval:
                 continue
             last_run = time.time()
-            STATE.agent.tick()
+            # The watchman runs even with the pipeline paused or half set up.
+            # A stopped app can still be broken, and that is exactly when
+            # nobody is looking at it.
+            STATE.agent.watch()
+            if cfg.get("autopilot_enabled") and cfg.get("inkbox_api_key"):
+                STATE.agent.tick()
         except Exception as e:  # never let the worker die
             try:
                 STATE.db.log(None, "autopilot_error", core.explain(e, 500))
@@ -592,6 +593,27 @@ DASHBOARD = """
 .today cite{display:block;font-style:normal;font-size:12px;color:var(--mut);
   margin-top:4px;letter-spacing:.02em}
 @media (max-width:800px){ .today p{font-size:15px} }
+
+/* What JARVIS has noticed. Ordered worst first, so the top row is always the
+   thing to do next. */
+.watchcard{padding-top:14px}
+.watchhead{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;
+  margin-bottom:10px}
+.watchhead h2{margin:0;font-size:15px;letter-spacing:.12em}
+.watchhead .eye{width:9px;height:9px;border-radius:50%;background:var(--acc);
+  box-shadow:0 0 0 3px rgba(244,114,182,.16);align-self:center}
+.watchrow{display:flex;gap:11px;align-items:center;padding:9px 0;
+  border-top:1px solid var(--line-2)}
+.watchrow .dot{flex:0 0 auto;width:7px;height:7px;border-radius:50%;
+  background:var(--mut)}
+.watchrow.fix .dot{background:var(--bad)}
+.watchrow.waiting .dot{background:var(--warn)}
+.watchrow .t{font-weight:600}
+.watchrow .btn{margin-left:auto;flex:0 0 auto}
+@media (max-width:800px){
+  .watchrow{flex-wrap:wrap}
+  .watchrow .btn{margin-left:18px}
+}
 </style>
 <div class="today">
   <span class="mark" aria-hidden="true">&ldquo;</span>
@@ -602,11 +624,29 @@ DASHBOARD = """
 <div class="warnbar"><div><b>Welcome!</b> Add your API keys on the Setup page to
 get started — nothing works until then.</div>
 <a class="btn btn-primary" href="{{ url_for('setup') }}">Open Setup</a></div>
-{% elif not config.autopilot_enabled %}
-<div class="warnbar"><div><b>Autopilot is OFF.</b> Replies and payments are not
-being processed automatically. Turn it on, or use “Check now”.</div>
-<form class="inline" method="post" action="{{ url_for('toggle_autopilot') }}">
-<button class="btn btn-primary">Turn autopilot on</button></form></div>
+{% endif %}
+
+{% if findings %}
+<div class="card watchcard">
+  <div class="watchhead">
+    <span class="eye" aria-hidden="true"></span>
+    <h2>JARVIS</h2>
+    <span class="muted">{{ findings|selectattr('level','equalto','fix')|list|length }}
+      to fix · {{ findings|selectattr('level','equalto','waiting')|list|length }}
+      waiting on you</span>
+    <a class="muted" href="{{ url_for('jarvis') }}" style="margin-left:auto">Full view →</a>
+  </div>
+  {% for f in findings %}
+  <div class="watchrow {{ f.level }}">
+    <span class="dot" aria-hidden="true"></span>
+    <div>
+      <div class="t">{{ f.title }}</div>
+      <div class="muted">{{ f.detail }}</div>
+    </div>
+    {% if f.cta %}<a class="btn btn-sm" href="{{ f.where }}">{{ f.cta }}</a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
 <div class="statrow">
@@ -1721,7 +1761,12 @@ body.alert .coreGlow{animation:pulse 1.1s ease-in-out infinite}
 body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,.6)}
 
 /* ---- pipeline bars ---- */
-.right{grid-area:right;display:flex;flex-direction:column;justify-content:center;gap:12px}
+/* "safe center" keeps the column centred while it fits and falls back to the
+   top once the watch list makes it taller than the screen — plain centring
+   clips the first item off the top, where the worst one lives. */
+.right{grid-area:right;display:flex;flex-direction:column;
+  justify-content:safe center;
+  gap:12px;min-height:0;overflow-y:auto;scrollbar-width:thin}
 .bar .label{display:flex;justify-content:space-between;margin-bottom:3px}
 .bar .label span:last-child{color:var(--cy2)}
 .track{height:7px;background:rgba(165,180,252,.10);border-radius:2px;overflow:hidden}
@@ -1732,6 +1777,20 @@ body.alert .coreLabel b{color:var(--amber);text-shadow:0 0 16px rgba(255,180,84,
 .feed{grid-area:feed;border-top:1px solid rgba(165,180,252,.22);padding-top:10px;
   overflow:hidden}
 .feed .label{margin-bottom:8px}
+/* What the watchman has found, worst first. Red is broken, amber is waiting
+   on the owner, dim is worth knowing. */
+#alerts{margin-bottom:14px}
+#alerts .alert{display:flex;gap:9px;align-items:flex-start;padding:7px 0;
+  border-bottom:1px solid rgba(150,170,255,.10);text-decoration:none;color:inherit}
+#alerts .alert:last-child{border-bottom:0}
+#alerts .pip{flex:0 0 auto;width:6px;height:6px;border-radius:50%;
+  margin-top:5px;background:var(--dim)}
+#alerts .alert.fix .pip{background:var(--red);
+  box-shadow:0 0 0 3px rgba(255,122,94,.16)}
+#alerts .alert.waiting .pip{background:var(--amber)}
+#alerts .alert b{display:block;font-size:12.5px;font-weight:600;letter-spacing:.02em}
+#alerts .alert span{font-size:11.5px;color:var(--dim);line-height:1.45}
+#alerts .clear{font-size:12px;color:var(--dim);letter-spacing:.08em}
 #feedlines{overflow:hidden;font-size:12.5px}
 #feedlines div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   padding:1.5px 0;color:#c2bce8}
@@ -1875,7 +1934,10 @@ body.alert #askbar{border-top-color:rgba(255,94,138,.45)}
       <b class="glow" id="coreState">SYSTEMS NOMINAL</b>
     </div>
   </div>
-  <div class="right" id="bars"></div>
+  <div class="right">
+    <div id="alerts"></div>
+    <div id="bars"></div>
+  </div>
   <div class="feed">
     <div class="label">Mission log — live</div>
     <div id="feedlines"></div>
@@ -2044,8 +2106,20 @@ body.alert #askbar{border-top-color:rgba(255,94,138,.45)}
     var greetWord = 'Good evening'; var h = new Date().getHours();
     if (h >= 5 && h < 12) greetWord = 'Good morning';
     else if (h >= 12 && h < 18) greetWord = 'Good afternoon';
+    var faults = d.findings.filter(function (f) { return f.level === 'fix'; }).length,
+        pending = d.findings.length - faults,
+        report;
+    if (faults) {
+      report = faults === 1 ? 'One thing needs fixing.'
+                            : faults + ' things need fixing.';
+    } else if (pending) {
+      report = pending === 1 ? 'One thing is waiting on you.'
+                             : pending + ' things are waiting on you.';
+    } else {
+      report = 'All services standing by.';
+    }
     typeOut(document.getElementById('greet'),
-            greetWord + (d.owner ? ', ' + d.owner : '') + '. All services standing by.');
+            greetWord + (d.owner ? ', ' + d.owner : '') + '. ' + report);
 
     var ap = document.getElementById('autopilot');
     ap.textContent = d.autopilot ? 'AUTOPILOT · ONLINE' : 'AUTOPILOT · STANDBY';
@@ -2096,9 +2170,34 @@ body.alert #askbar{border-top-color:rgba(255,94,138,.45)}
       setNumber(w.children[1], 'kpi' + i, m.v);
     });
 
+    var alerts = document.getElementById('alerts');
+    alerts.textContent = '';
+    var lab = document.createElement('div');
+    lab.className = 'label';
+    lab.textContent = 'What needs you';
+    alerts.appendChild(lab);
+    if (!d.findings.length) {
+      var ok = document.createElement('div');
+      ok.className = 'clear'; ok.textContent = 'Nothing. All clear.';
+      alerts.appendChild(ok);
+    }
+    d.findings.forEach(function (f) {
+      var a = document.createElement('a');
+      a.className = 'alert ' + f.level; a.href = f.where;
+      var pip = document.createElement('span'); pip.className = 'pip';
+      var box = document.createElement('div');
+      var b = document.createElement('b'); b.textContent = f.title;
+      var sp = document.createElement('span'); sp.textContent = f.detail;
+      box.appendChild(b); box.appendChild(sp);
+      a.appendChild(pip); a.appendChild(box);
+      alerts.appendChild(a);
+    });
+
+    var broken = d.findings.filter(function (f) { return f.level === 'fix'; }).length;
     document.getElementById('coreState').textContent =
-      d.attention > 0 ? d.attention + (d.attention === 1 ? ' ITEM NEEDS' : ' ITEMS NEED') + ' YOU'
-                      : 'SYSTEMS NOMINAL';
+      broken ? broken + (broken === 1 ? ' FAULT' : ' FAULTS') + ' — NEEDS YOU'
+             : (d.findings.length ? d.findings.length + ' WAITING ON YOU'
+                                  : 'SYSTEMS NOMINAL');
 
     var bars = document.getElementById('bars'); bars.textContent = '';
     var max = 1, k;
@@ -2510,6 +2609,7 @@ def jarvis_data():
         "owner": (cfg.get("your_name") or "").split(" ")[0] or None,
         "autopilot": bool(cfg.get("autopilot_enabled")),
         "attention": len(db.attention_events()),
+        "findings": current_findings(),
         "money": money,
         "kpis": kpis,
         "stages": {s: stages[s] for s in core.ALL_STAGES if s in stages},
@@ -2529,7 +2629,8 @@ def dashboard():
     configured = bool(cfg.get("inkbox_api_key") and cfg.get("anthropic_api_key"))
     return _render(DASHBOARD, leads=leads, today_line=core.line_for_today(),
                    stage_counts=[(s, counts[s]) for s in order],
-                   attention=db.attention_events(), configured=configured)
+                   attention=db.attention_events(), configured=configured,
+                   findings=current_findings())
 
 
 
@@ -3084,6 +3185,19 @@ appear.</p>
 """
 
 
+def current_findings() -> list[dict]:
+    """What JARVIS has noticed right now, including the things only the app
+    itself knows — an update sitting on disk, for one."""
+    extra = []
+    if not CLOUD_MODE and _restart_pending():
+        extra.append(core.finding(
+            "restart-pending", core.WATCH, "An update is installed but not running",
+            "Restart to start using it.", "/updates", "Restart"))
+    return core.checkup(STATE.db, STATE.config,
+                        [(k["name"], k["field"]) for k in KEY_FIELDS],
+                        extra)
+
+
 def _restart_pending() -> bool:
     """True when installed code is newer than what this process is running."""
     return bool(core.installed_version().get("sha")
@@ -3368,6 +3482,17 @@ def assistant_snapshot() -> str:
     """
     db, cfg = STATE.db, STATE.config
     out = [f"LIVE SNAPSHOT (taken {core._now()})"]
+
+    # The watchman's list first: it is the answer to "what's wrong?", and it
+    # is the same list the owner is looking at on screen.
+    found = current_findings()
+    if found:
+        out.append("\nWHAT NEEDS THEM RIGHT NOW (worst first):")
+        for f in found:
+            out.append("  [%s] %s — %s (%s)"
+                       % (f["level"].upper(), f["title"], f["detail"], f["where"]))
+    else:
+        out.append("\nNothing is broken and nothing is waiting on them.")
 
     missing = [k["name"] for k in KEY_FIELDS if not cfg.get(k["field"])]
     out.append("Setup: " + ("every API key is saved." if not missing else

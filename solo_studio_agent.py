@@ -907,6 +907,209 @@ def describe_search(r: dict) -> str:
             "towns nearby are where the gaps are.")
 
 
+# ---------------------------------------------------------------------------
+# The watchman
+#
+# One deterministic pass over the config, the leads and the log that answers
+# the only question that matters when you open the app: is anything wrong, and
+# what do I do about it. No API calls, no model, no guessing — it runs on every
+# background tick and on every page load, so it has to be cheap and it has to
+# be the same answer every time.
+#
+# It reports. It never acts: nothing here sends an email, moves money, or
+# touches a lead's stage.
+# ---------------------------------------------------------------------------
+
+# The five keys, by the name the owner sees on Setup.
+API_KEYS = (("Anthropic (Claude)", "anthropic_api_key"),
+            ("Inkbox", "inkbox_api_key"),
+            ("Netlify", "netlify_api_key"),
+            ("Stripe", "stripe_secret_key"),
+            ("Google Places", "google_places_api_key"))
+
+FIX = "fix"            # broken — the pipeline can't do its job until it's sorted
+WAITING = "waiting"    # working, but it needs a human decision
+WATCH = "watch"        # worth knowing, nothing on fire
+LEVEL_ORDER = {FIX: 0, WAITING: 1, WATCH: 2}
+
+# How long a lead may sit in a stage that is supposed to take seconds before
+# it counts as stuck rather than busy. Time alone is not enough: a step that
+# keeps failing and retrying refreshes the lead every time, so it never looks
+# old. Repeated attempts catch that one.
+STUCK_MINUTES = 30
+STUCK_ATTEMPTS = 2
+# A payment link nobody has used, and a preview nobody answered, go stale.
+STALE_LINK_DAYS = 7
+STALE_PREVIEW_DAYS = 5
+
+
+def _age_minutes(stamp: str | None) -> float:
+    if not stamp:
+        return 0.0
+    try:
+        then = datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return 0.0
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - then).total_seconds() / 60
+
+
+def finding(id, level, title, detail, where="/", cta="") -> dict:
+    return {"id": id, "level": level, "title": title, "detail": detail,
+            "where": where, "cta": cta}
+
+
+def checkup(db, cfg, key_fields=API_KEYS, extra=()) -> list[dict]:
+    """Everything currently worth telling the owner, worst first."""
+    out = []
+
+    # -- can it work at all -------------------------------------------------
+    missing = [name for name, field in key_fields if not cfg.get(field)]
+    if missing:
+        out.append(finding(
+            "keys-missing", FIX,
+            "%d API key%s still missing" % (len(missing),
+                                            "" if len(missing) == 1 else "s"),
+            "Nothing runs without " + ", ".join(missing) + ".",
+            "/setup", "Open Setup"))
+
+    if not cfg.get("mailing_address"):
+        out.append(finding(
+            "no-mailing-address", FIX, "No mailing address saved",
+            "Cold email has to carry a real postal address by law. Add yours "
+            "before any outreach goes out.", "/setup", "Add it"))
+    if not cfg.get("your_name"):
+        out.append(finding(
+            "no-name", WAITING, "Your name isn't filled in",
+            "Every email signs off with it.", "/setup", "Add it"))
+
+    if cfg.get("phone_access_enabled") and not cfg.get("phone_pin"):
+        out.append(finding(
+            "phone-open", FIX, "Phone access is on with no PIN",
+            "Anyone on your Wi-Fi can open your dashboard. Set a PIN or turn "
+            "phone access off.", "/setup", "Fix it"))
+
+    # -- what the log is complaining about ----------------------------------
+    attention = db.attention_events()
+    if attention:
+        kinds = {}
+        for e in attention:
+            kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
+        worst = ", ".join(f"{k.replace('_', ' ')} ({v})"
+                          for k, v in sorted(kinds.items(),
+                                             key=lambda kv: -kv[1])[:3])
+        out.append(finding(
+            "attention", FIX,
+            "%d thing%s went wrong" % (len(attention),
+                                       "" if len(attention) == 1 else "s"),
+            worst + ". Each one is on the Activity page with what happened.",
+            "/activity", "See what"))
+
+    recent = " ".join((e["detail"] or "") for e in db.recent_events(40))
+    if "$0 of API credit" in recent or "credit balance is too low" in recent:
+        out.append(finding(
+            "credit-empty", FIX, "Claude has no API credit",
+            "Every step that writes or designs anything is failing. Add credit "
+            "at console.anthropic.com/settings/billing.", "/setup", "Open Setup"))
+
+    # -- leads that are stuck or broken -------------------------------------
+    leads = db.all_leads()
+    errored = [l for l in leads if l["stage"] == STAGE_ERROR]
+    if errored:
+        out.append(finding(
+            "leads-error", FIX,
+            "%d lead%s gave up with an error" % (len(errored),
+                                                 "" if len(errored) == 1 else "s"),
+            ", ".join(l["name"] for l in errored[:3])
+            + ("..." if len(errored) > 3 else "")
+            + ". Their last error is on the lead.", "/", "Look"))
+
+    stuck, retrying = [], []
+    for l in leads:
+        if l["stage"] not in TRANSIENT_STAGES:
+            continue
+        if (l["attempts"] or 0) >= STUCK_ATTEMPTS:
+            retrying.append(l)
+        elif _age_minutes(l["updated_at"]) > STUCK_MINUTES:
+            stuck.append(l)
+    if stuck or retrying:
+        n = len(stuck) + len(retrying)
+        why = ("failing and retrying" if retrying else
+               "sitting there for over %d minutes" % STUCK_MINUTES)
+        out.append(finding(
+            "leads-stuck", FIX,
+            "%d lead%s stuck mid-step" % (n, "" if n == 1 else "s"),
+            "These stages take seconds. %s means something is going wrong "
+            "quietly — Activity says what."
+            % why.capitalize(), "/activity", "See why"))
+
+    # -- waiting on the human ----------------------------------------------
+    waiting = db.leads_awaiting_approval()
+    if waiting:
+        out.append(finding(
+            "approve-queue", WAITING,
+            "%d cold email%s waiting for you" % (len(waiting),
+                                                 "" if len(waiting) == 1 else "s"),
+            "Nothing goes out until you read it and press send.",
+            "/approve", "Review them"))
+
+    need_email = db.leads_needing_email()
+    if need_email:
+        out.append(finding(
+            "need-email", WAITING,
+            "%d lead%s with no email address" % (len(need_email),
+                                                 "" if len(need_email) == 1 else "s"),
+            "They can't be contacted until one is found. The Researcher can "
+            "suggest them, or you can call instead.", "/calls", "Call them"))
+
+    # -- quietly going cold -------------------------------------------------
+    stale_links = [l for l in leads if l["stage"] == STAGE_PAYMENT_LINK_SENT
+                   and _age_minutes(l["updated_at"]) > STALE_LINK_DAYS * 1440]
+    if stale_links:
+        out.append(finding(
+            "payment-stale", WATCH,
+            "%d payment link older than %d days" % (len(stale_links),
+                                                    STALE_LINK_DAYS),
+            "Sent and never used. Worth a phone call.", "/calls", "Call"))
+
+    stale_previews = [l for l in leads if l["stage"] == STAGE_PREVIEW_SENT
+                      and _age_minutes(l["updated_at"]) > STALE_PREVIEW_DAYS * 1440]
+    if stale_previews:
+        out.append(finding(
+            "preview-stale", WATCH,
+            "%d preview with no answer in %d days" % (len(stale_previews),
+                                                      STALE_PREVIEW_DAYS),
+            "They saw a site with their name on it and went quiet.",
+            "/calls", "Call"))
+
+    # -- switched off -------------------------------------------------------
+    if not cfg.get("autopilot_enabled"):
+        out.append(finding(
+            "autopilot-off", WATCH, "Autopilot is off",
+            "Replies and payments are only checked when you press a button.",
+            "/setup", "Turn it on"))
+    elif not cfg.get("auto_search_enabled"):
+        out.append(finding(
+            "search-off", WATCH, "Automatic lead hunting is off",
+            "No new leads will appear on their own.", "/setup", "Turn it on"))
+    elif not (cfg.get("saved_searches") or "").strip():
+        out.append(finding(
+            "no-searches", WATCH, "No saved searches",
+            "Put your town in on Setup and it builds the list for you.",
+            "/setup", "Build the list"))
+
+    if str(cfg.get("stripe_secret_key", "")).startswith("sk_test"):
+        out.append(finding(
+            "stripe-test", WATCH, "Stripe is in test mode",
+            "Perfect for a practice run — but no real money can be taken.",
+            "/setup", "Setup"))
+
+    out.extend(extra)
+    out.sort(key=lambda f: LEVEL_ORDER.get(f["level"], 9))
+    return out
+
+
 class Services:
     def __init__(self, config: dict):
         self.config = config
@@ -1184,7 +1387,16 @@ WHERE THINGS ARE IN THE APP
 - Setup — API keys (with click-by-click directions), business details, the cold
   email template, automatic lead hunting, phone access, and an Advanced section.
 - Updates — install a new version, then restart.
-- JARVIS — the live stats screen.
+- JARVIS — the live stats screen, with the same watch list on it.
+
+THE WATCH LIST
+The app checks itself continuously and the snapshot below opens with what it
+found, worst first: FIX means something is broken, WAITING means it needs a
+decision only the owner can make, WATCH means worth knowing. That list is on
+their screen too, so it is the shared starting point. When they ask what is
+wrong, or what to do next, answer from it — name the top item, say what it
+means in their words, and where to go. Do not invent problems that are not on
+it, and do not soften one that is.
 
 WHAT YOU CAN AND CANNOT DO
 You can see the owner's live pipeline (below) and answer anything about it, walk
@@ -2215,3 +2427,29 @@ class Agent:
         self.tick_transients()
         self.run_saved_searches()
         self.research_missing_emails()
+
+    def watch(self) -> list[dict]:
+        """Look the whole app over and push for anything newly broken.
+
+        Runs whether or not the pipeline is switched on — a paused app can
+        still be misconfigured, and that is exactly when nobody is looking.
+        A problem notifies once: it has to clear and come back to notify
+        again, so a key you haven't got round to adding doesn't buzz all day.
+        """
+        found = checkup(self.db, self.config)
+        problems = [f for f in found if f["level"] == FIX]
+        try:
+            known = set(json.loads(self.db.get_kv("watch_notified") or "[]"))
+        except (TypeError, ValueError):
+            known = set()
+        ids = {f["id"] for f in problems}
+        fresh = [f for f in problems if f["id"] not in known]
+        if fresh:
+            more = len(fresh) - 1
+            self._notify(fresh[0]["title"],
+                         fresh[0]["detail"]
+                         + (f" (+{more} more)" if more else ""),
+                         priority="high", tags="warning")
+        if ids != known:
+            self.db.set_kv("watch_notified", json.dumps(sorted(ids)))
+        return found

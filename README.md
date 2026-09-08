@@ -202,6 +202,30 @@ from anywhere, on any network.
 - Any host that runs a Python web app with a persistent disk works the same
   way; Render is just the least fiddly.
 
+## JARVIS keeps watch
+
+The app checks itself continuously — on every background tick, whether or not
+autopilot is on, because a paused app can still be misconfigured and that is
+exactly when nobody is looking. What it finds is sorted worst first and shown
+in three places: a panel at the top of the Dashboard, the right-hand column of
+the JARVIS screen, and the brief the Ask helper reads, so asking "what's wrong?"
+gets the same answer that's on screen.
+
+Three levels:
+
+| | What it means |
+|---|---|
+| **Fix** | Broken. A missing key, no API credit, a lead that gave up, a step failing on repeat, phone access with no PIN, no mailing address (cold email needs one by law). |
+| **Waiting** | Working, but it needs you: emails to approve, leads with no address found yet. |
+| **Watch** | Worth knowing. Autopilot off, Stripe in test mode, a payment link nobody used for a week, a preview nobody answered. |
+
+Anything at **Fix** level pushes a notification to your phone once, when it
+first appears. It has to clear and come back to notify again, so a key you
+haven't got round to adding doesn't buzz all day. Waiting and Watch never push.
+
+The watchman only ever reports. It cannot send an email, move money, or change
+a lead's stage — there is a test that fails if that ever changes.
+
 ## Day-to-day use
 
 **What runs by itself, and what needs you:**
