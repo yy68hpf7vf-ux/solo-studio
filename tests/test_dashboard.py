@@ -191,14 +191,31 @@ class PhoneGateTest(unittest.TestCase):
         finally:
             self.dash.BOUND_HOST = "127.0.0.1"
 
-    def test_restart_without_a_launcher_does_not_quit_on_you(self):
-        """Run by hand there is nothing to bring the app back, so it must say
-        so rather than exiting."""
-        self.dash.HAVE_LAUNCHER = False
-        r = self.client.post("/action/restart", data={"back": "/setup"},
-                             environ_base={"REMOTE_ADDR": "127.0.0.1"})
-        self.assertEqual(r.status_code, 302)
-        self.assertIn("/setup", r.headers["Location"])
+    def test_restart_without_a_launcher_relaunches_us(self):
+        """With no launcher the button used to give up and tell the user to go
+        quit the app by hand — on the one page whose whole job is not making
+        them do that. Now the app brings itself back instead."""
+        import threading
+        came_back = threading.Event()
+        real = self.dash._relaunch_self
+        was = self.dash.LAUNCHER_RERUNS_US
+        self.dash.LAUNCHER_RERUNS_US = False
+        self.dash._relaunch_self = lambda: came_back.set()
+        try:
+            r = self.client.post("/action/restart", data={"back": "/setup"},
+                                 environ_base={"REMOTE_ADDR": "127.0.0.1"})
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("RESTARTING", r.data.decode())
+            self.assertNotIn("Quit Solo Studio", r.data.decode())
+            self.assertTrue(came_back.wait(5), "never relaunched")
+        finally:
+            self.dash._relaunch_self = real
+            self.dash.LAUNCHER_RERUNS_US = was
+
+    def test_nothing_ever_asks_the_user_to_quit_and_reopen(self):
+        """The dead end this replaced. It should not come back."""
+        import inspect
+        self.assertNotIn("Quit Solo Studio", inspect.getsource(self.dash))
 
     # -- the living backdrop -------------------------------------------------
 

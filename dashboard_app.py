@@ -12,9 +12,11 @@ import argparse
 import base64
 import hmac
 import os
+import py_compile
 import re
 import secrets
 import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -53,24 +55,16 @@ STATE = State()
 # there is deliberately no "local request" bypass, because behind a hosting
 # proxy every request can look local.
 BOUND_HOST = "127.0.0.1"   # set in main(); 0.0.0.0 means the phone can reach us
-def _launcher_present() -> bool:
-    """Is something going to start us again if we exit?
-
-    Newer launchers say so outright. Older ones can't be told to — the launcher
-    lives inside the .app bundle and the in-app updater deliberately never
-    writes there, so a freshly updated app can be running under a launcher from
-    months ago. Recognise where it puts us instead: the updated-code directory
-    and the bundle's Resources are the only two places it ever runs us from, so
-    being in either means we were launched, not run by hand.
-    """
-    if os.environ.get("SOLO_STUDIO_LAUNCHER") == "1":
-        return True
-    here = os.path.dirname(os.path.abspath(__file__))
-    return (here == os.path.join(core.app_data_dir(), "app")
-            or here.endswith(os.path.join("Contents", "Resources")))
-
-
-HAVE_LAUNCHER = _launcher_present()
+RUN_PORT = PORT           # set in main(); what a relaunch should bind again
+# Set by the launcher, which reruns us when we exit with the restart code and
+# reinstalls any components an update needs on the way back. Nothing else may
+# be read as a promise that something will bring us back: guessing from where
+# the code sits got it wrong in both directions — telling users to go quit the
+# app when a launcher was there, and quitting into nothing when it wasn't. When
+# it is unset we relaunch ourselves instead, which works either way: replacing
+# our own process keeps the same PID, so a launcher waiting on us never
+# notices.
+LAUNCHER_RERUNS_US = os.environ.get("SOLO_STUDIO_LAUNCHER") == "1"
 CLOUD_PASSWORD = os.environ.get("SOLO_STUDIO_PASSWORD", "").strip()
 CLOUD_MODE = bool(CLOUD_PASSWORD)
 # Version this process started with — compared against what is installed
@@ -3281,22 +3275,104 @@ def do_update():
     return redirect(url_for("updates_page"))
 
 
+def _compiles(directory: str) -> bool:
+    """Is there a complete, startable copy of the app in here?"""
+    files = [os.path.join(directory, n)
+             for n in ("dashboard_app.py", "solo_studio_agent.py")]
+    if not all(os.path.exists(f) for f in files):
+        return False
+    try:
+        for f in files:
+            py_compile.compile(f, doraise=True)
+    except (py_compile.PyCompileError, OSError, ValueError):
+        return False
+    return True
+
+
+def _code_to_run() -> str:
+    """Which copy of the app a restart should come back on.
+
+    A downloaded update if there is one, otherwise the copy we are running
+    now — and only after checking it actually compiles, the same guard the
+    launcher applies. Returns "" when nothing on disk starts, in which case
+    there must be no restart at all: the code already running is then the last
+    working copy in existence and quitting would lose it.
+    """
+    candidates = []
+    try:
+        candidates.append(core.updates_dir())
+    except OSError:
+        pass
+    mine = os.path.dirname(os.path.abspath(__file__))
+    if mine not in candidates:
+        candidates.append(mine)
+    for d in candidates:
+        if _compiles(d):
+            return d
+    return ""
+
+
+MAX_FD = 4096            # plenty: this process opens a few dozen at most
+
+
+def _drop_open_files() -> None:
+    """Make sure nothing we hold open survives into the process that replaces us.
+
+    Python closes its files on exec, but the web server deliberately does not:
+    it marks its listening socket inheritable so a reloader can pass the port
+    along. Left that way the new process finds its own port occupied and dies
+    on startup. Hand nothing over but the console.
+    """
+    os.environ.pop("WERKZEUG_SERVER_FD", None)   # no fd to hand over any more
+    for fd in range(3, MAX_FD):
+        try:
+            os.set_inheritable(fd, False)
+        except OSError:
+            pass
+
+
+def _relaunch_self() -> None:
+    """Replace this process with a fresh one, no launcher required.
+
+    Raises OSError if the exec fails, in which case we are still the old
+    process, still running, and still serving the dashboard.
+    """
+    directory = _code_to_run()
+    if not directory:
+        raise OSError("nothing on disk compiles — staying on the copy already "
+                      "running rather than quitting into a broken one")
+    target = os.path.join(directory, "dashboard_app.py")
+    _drop_open_files()
+    os.execv(sys.executable,
+             [sys.executable, target, "--port", str(RUN_PORT)])
+
+
 @app.post("/action/restart")
 def do_restart():
-    """Exit with the launcher's restart code; the launcher starts us again."""
+    """Come back on the newly installed code.
+
+    Under a launcher that announces itself, exiting with its restart code is
+    best: it reinstalls anything new an update needs on the way back. Every
+    other case — run by hand, or a launcher too old to say so — we relaunch
+    ourselves, so the button always works instead of telling the user to go
+    quit the app.
+    """
     back = request.form.get("back") or url_for("updates_page")
     if CLOUD_MODE:
         flash("The cloud version restarts itself on deploy.", "err")
         return redirect(back)
-    if not HAVE_LAUNCHER:
-        # Started by hand rather than from the app icon — nothing would bring
-        # us back, so say so instead of quitting on them.
-        flash("Quit Solo Studio and open it again to finish.", "err")
-        return redirect(back)
 
     def bye():
         time.sleep(0.7)          # let this response reach the browser first
-        os._exit(core.RESTART_EXIT_CODE)
+        if LAUNCHER_RERUNS_US:
+            os._exit(core.RESTART_EXIT_CODE)
+        else:
+            try:
+                _relaunch_self()
+            except OSError as e:
+                # Still alive, still on the old code. The Updates page goes on
+                # saying a restart is needed, which is the truth.
+                print(f"Couldn't relaunch: {e}", file=sys.stderr)
 
     threading.Thread(target=bye, daemon=True).start()
     return render_template_string(RESTARTING_PAGE, pwa_meta=PWA_META)
@@ -3865,6 +3941,8 @@ def main():
         return
 
     url = f"http://127.0.0.1:{args.port}/"
+    global RUN_PORT
+    RUN_PORT = args.port
     if args.port == PORT and _port_in_use():
         # Another copy is already running — just show it.
         if args.open_browser:

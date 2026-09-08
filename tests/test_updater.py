@@ -7,8 +7,10 @@ matters most is: a bad download must never replace a working install.
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -158,63 +160,155 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(len(self.core.Database().all_leads()), 1)
 
 
-class LauncherDetectionTest(unittest.TestCase):
-    """Whether the Restart button works.
+class RestartRouteTest(unittest.TestCase):
+    """How the Restart button decides to come back.
 
-    The launcher lives in the .app bundle and the updater never writes there,
-    so freshly updated code routinely runs under a launcher from months ago.
-    Detection that relies only on the newer launcher's environment variable
-    told real users to quit and reopen every single time.
+    Guessing whether a launcher was there went wrong in both directions: real
+    users were told to quit and reopen when a launcher was running them, and a
+    wrong guess the other way exits into nothing and the app disappears. Only
+    the launcher's own signal counts now; everything else relaunches itself,
+    which is safe whether or not a launcher exists.
     """
 
     def setUp(self):
         import dashboard_app as dash
         self.dash = dash
-        self.tmp = tempfile.mkdtemp(prefix="solo-studio-launch-")
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-restart-")
+        self.old_home = os.environ.get("SOLO_STUDIO_HOME")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        self.was = dash.LAUNCHER_RERUNS_US
 
     def tearDown(self):
+        self.dash.LAUNCHER_RERUNS_US = self.was
+        if self.old_home is None:
+            os.environ.pop("SOLO_STUDIO_HOME", None)
+        else:
+            os.environ["SOLO_STUDIO_HOME"] = self.old_home
         shutil.rmtree(self.tmp, ignore_errors=True)
-        os.environ.pop("SOLO_STUDIO_LAUNCHER", None)
 
-    def _detect(self, here, env=None):
-        """Run the real check with __file__ and the env pretending to be
-        somewhere else."""
+    def _restart(self):
+        self.dash.app.config["TESTING"] = True
+        with self.dash.app.test_client() as client:
+            before = set(threading.enumerate())
+            with mock.patch.object(self.dash.time, "sleep"):
+                r = client.post("/action/restart",
+                                environ_base={"REMOTE_ADDR": "127.0.0.1"})
+            for t in set(threading.enumerate()) - before:
+                t.join(5)          # the goodbye runs in its own thread
+            return r
+
+    def test_a_launcher_that_announced_itself_gets_the_restart_code(self):
+        self.dash.LAUNCHER_RERUNS_US = True
+        with mock.patch.object(self.dash.os, "_exit") as ex, \
+                mock.patch.object(self.dash, "_relaunch_self") as relaunch:
+            self._restart()
+        ex.assert_called_once_with(self.dash.core.RESTART_EXIT_CODE)
+        relaunch.assert_not_called()
+
+    def test_everything_else_relaunches_instead_of_exiting(self):
+        self.dash.LAUNCHER_RERUNS_US = False
+        with mock.patch.object(self.dash.os, "_exit") as ex, \
+                mock.patch.object(self.dash, "_relaunch_self") as relaunch:
+            self._restart()
+        relaunch.assert_called_once()
+        ex.assert_not_called()
+
+    def test_only_the_launchers_own_signal_counts(self):
+        """Not the directory the code happens to sit in — that is exactly the
+        guess that made the app vanish."""
+        import inspect
+        src = inspect.getsource(self.dash)
+        head = src[:src.index("CLOUD_PASSWORD =")]
+        self.assertIn("SOLO_STUDIO_LAUNCHER", head)
+        self.assertNotIn("Contents", head)
+
+
+class RelaunchTargetTest(unittest.TestCase):
+    """Which copy of the code a self-relaunch comes back on.
+
+    Same rules the launcher uses, because quitting into code that does not
+    start would leave the user with no app at all.
+    """
+
+    GOOD = "x = 1\n"
+    BROKEN = "def (:\n"
+
+    def setUp(self):
+        import dashboard_app as dash
         import solo_studio_agent as core
-        real_file = self.dash.__file__
-        old_env = os.environ.pop("SOLO_STUDIO_LAUNCHER", None)
-        old_home = os.environ.get("SOLO_STUDIO_HOME")
+        self.dash, self.core = dash, core
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-relaunch-")
+        self.old_home = os.environ.get("SOLO_STUDIO_HOME")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        self.updated = self.core.updates_dir()
+        self.mine = os.path.join(self.tmp, "running")
+        os.makedirs(self.mine, exist_ok=True)
+        self._fill(self.mine, self.GOOD)
+        self.real_file = dash.__file__
+        dash.__file__ = os.path.join(self.mine, "dashboard_app.py")
+
+    def tearDown(self):
+        self.dash.__file__ = self.real_file
+        if self.old_home is None:
+            os.environ.pop("SOLO_STUDIO_HOME", None)
+        else:
+            os.environ["SOLO_STUDIO_HOME"] = self.old_home
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _fill(self, directory, body):
+        for name in ("dashboard_app.py", "solo_studio_agent.py"):
+            with open(os.path.join(directory, name), "w",
+                      encoding="utf-8") as f:
+                f.write(body)
+
+    def test_no_download_means_we_come_back_as_ourselves(self):
+        self.assertEqual(self.dash._code_to_run(), self.mine)
+
+    def test_a_good_download_is_what_we_come_back_on(self):
+        self._fill(self.updated, self.GOOD)
+        self.assertEqual(self.dash._code_to_run(), self.updated)
+
+    def test_a_broken_download_is_refused(self):
+        self._fill(self.updated, self.BROKEN)
+        self.assertEqual(self.dash._code_to_run(), self.mine)
+
+    def test_half_a_download_is_refused(self):
+        with open(os.path.join(self.updated, "dashboard_app.py"), "w",
+                  encoding="utf-8") as f:
+            f.write(self.GOOD)
+        self.assertEqual(self.dash._code_to_run(), self.mine)
+
+    def test_when_nothing_on_disk_starts_we_stay_put(self):
+        """Both copies unusable: restarting would trade a working app for
+        none, so it must refuse rather than exit."""
+        self._fill(self.updated, self.BROKEN)
+        self._fill(self.mine, self.BROKEN)
+        self.assertEqual(self.dash._code_to_run(), "")
+        with mock.patch("os.execv") as execv:
+            with self.assertRaises(OSError):
+                self.dash._relaunch_self()
+        execv.assert_not_called()
+
+    def test_the_listening_socket_is_not_handed_to_the_new_process(self):
+        """The web server marks its socket inheritable so a reloader can pass
+        the port along. Carried through a relaunch it makes the new process
+        die on 'Address already in use'."""
+        self._fill(self.updated, self.GOOD)
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        sock.set_inheritable(True)
+        os.environ["WERKZEUG_SERVER_FD"] = str(sock.fileno())
         try:
-            if env:
-                os.environ["SOLO_STUDIO_LAUNCHER"] = env
-            os.environ["SOLO_STUDIO_HOME"] = self.tmp
-            self.dash.__file__ = os.path.join(here, "dashboard_app.py")
-            core.app_data_dir.cache_clear() if hasattr(
-                core.app_data_dir, "cache_clear") else None
-            return self.dash._launcher_present()
+            with mock.patch("os.execv") as execv:
+                self.dash._relaunch_self()
+            self.assertFalse(os.get_inheritable(sock.fileno()))
+            self.assertNotIn("WERKZEUG_SERVER_FD", os.environ)
+            execv.assert_called_once()
+            self.assertIn(os.path.join(self.updated, "dashboard_app.py"),
+                          execv.call_args[0][1])
         finally:
-            self.dash.__file__ = real_file
-            os.environ.pop("SOLO_STUDIO_LAUNCHER", None)
-            if old_env is not None:
-                os.environ["SOLO_STUDIO_LAUNCHER"] = old_env
-            if old_home is not None:
-                os.environ["SOLO_STUDIO_HOME"] = old_home
-
-    def test_updated_code_under_an_old_launcher_can_still_restart(self):
-        """The exact case that broke: new .py files, launcher too old to
-        announce itself."""
-        self.assertTrue(self._detect(os.path.join(self.tmp, "app")))
-
-    def test_a_new_launcher_announces_itself(self):
-        self.assertTrue(self._detect("/anywhere/at/all", env="1"))
-
-    def test_running_from_the_bundle_counts(self):
-        self.assertTrue(self._detect("/Applications/Solo Studio.app/"
-                                     "Contents/Resources"))
-
-    def test_run_by_hand_does_not(self):
-        """Started from a clone there is no loop, so it must say so rather
-        than exiting and leaving the user with nothing."""
-        self.assertFalse(self._detect("/Users/sam/code/solo-studio"))
+            os.environ.pop("WERKZEUG_SERVER_FD", None)
+            sock.close()
 
 
 if __name__ == "__main__":

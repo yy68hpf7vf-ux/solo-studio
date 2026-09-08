@@ -134,6 +134,12 @@ Python is rejected before anything is overwritten, and if an installed update
 somehow won't start, the launcher falls back to the version inside the app
 bundle and tells you.
 
+The Restart button brings the app back itself, so it works however Solo Studio
+was started — from the icon, from an app bundle too old to know about the
+button, or by hand from a terminal. If nothing on disk will start, it refuses
+to restart at all and stays on the copy already running rather than leaving you
+with no app.
+
 **On the cloud version there's nothing to do at all** — your host redeploys
 automatically whenever the code changes.
 
