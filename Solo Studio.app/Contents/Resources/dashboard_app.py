@@ -254,7 +254,7 @@ def _autopilot_loop():
             STATE.agent.tick()
         except Exception as e:  # never let the worker die
             try:
-                STATE.db.log(None, "autopilot_error", str(e)[:500])
+                STATE.db.log(None, "autopilot_error", core.explain(e, 500))
             except Exception:
                 pass
 
@@ -3711,7 +3711,7 @@ def ask_send():
     try:
         reply = STATE.services.assistant_reply(history, assistant_snapshot())
     except Exception as e:                       # network, bad key, rate limit
-        return jsonify(ok=False, error=f"Couldn't reach Claude: {str(e)[:200]}")
+        return jsonify(ok=False, error=f"Couldn't reach Claude: {core.explain(e)}")
     db.chat_add("assistant", reply)
     return jsonify(ok=True, reply=reply)
 
@@ -3832,7 +3832,7 @@ def build_searches():
     try:
         towns = STATE.services.towns_near(base, miles)
     except Exception as e:
-        flash(f"Couldn't work out the towns: {str(e)[:200]}", "err")
+        flash(f"Couldn't work out the towns: {core.explain(e)}", "err")
         return redirect(url_for("setup"))
 
     lines = [f"{trade} in {town}" for town in towns for trade in trades]
@@ -3857,7 +3857,7 @@ def test_notification():
         flash("Test notification sent — check your phone (subscribe to the topic "
               "in the ntfy app first).", "ok")
     except Exception as e:
-        flash(f"Couldn't send: {e}", "err")
+        flash(f"Couldn't send: {core.explain(e, 300)}", "err")
     return redirect(url_for("setup"))
 
 
@@ -3875,7 +3875,7 @@ def setup_test():
             detail = fn()
             results.append((name, True, detail))
         except Exception as e:
-            results.append((name, False, str(e)[:300]))
+            results.append((name, False, core.explain(e, 300)))
 
     def test_places():
         r = svc.places_search_no_website("coffee in San Francisco", max_results=1)

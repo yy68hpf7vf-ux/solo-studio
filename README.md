@@ -80,6 +80,12 @@ left. Work down the list in order:
 Google Places is last on purpose: it's the only one that needs a card on file,
 and everything else works without it — you'd just be adding businesses by hand.
 
+Anthropic is pay-as-you-go and a brand-new account starts at zero, so add
+credit under **Plans & Billing** at console.anthropic.com before you use it —
+$5 goes a long way, since a whole website costs cents. Until you do, every
+Claude step fails with "credit balance is too low", which the app now says in
+plain English along with where to fix it.
+
 Then fill in your name, studio name, **mailing address** and price, click
 **Save settings**, and click **Test connections** — every row should show a
 green check before you start.

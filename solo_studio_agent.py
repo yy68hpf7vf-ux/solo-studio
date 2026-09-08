@@ -763,6 +763,64 @@ class ServiceError(RuntimeError):
     """A service call failed in a way worth showing the user."""
 
 
+# The failures that actually happen, and what to do about each one. Services
+# report these as JSON a paragraph long; what the user needs is one sentence
+# and the button to press. Matched against the error text, first hit wins.
+PLAIN_ERRORS = (
+    ("credit balance is too low",
+     "Claude has run out of credit. Open console.anthropic.com, go to Plans & "
+     "Billing and add some — $5 lasts a long way, a whole website costs cents. "
+     "Your key is fine; nothing else needs changing."),
+    ("invalid x-api-key",
+     "Claude didn't accept that key. Copy a fresh one from console.anthropic.com "
+     "and paste it on the Setup page."),
+    ("authentication_error",
+     "Claude didn't accept that key. Copy a fresh one from console.anthropic.com "
+     "and paste it on the Setup page."),
+    ("rate_limit_error",
+     "Claude is being asked for too much at once. It sorts itself out — wait a "
+     "minute and try again."),
+    ("overloaded_error",
+     "Claude is overloaded right now. Nothing is broken; try again in a minute."),
+    ("api key not valid",
+     "Google didn't accept that key. Check it on the Setup page, and make sure "
+     "the key has no website or app restriction on it."),
+    ("request_denied",
+     "Google refused the search. Usually that means the Places API isn't "
+     "switched on for this key yet, or billing isn't enabled on the Google "
+     "project."),
+    ("billing has not been enabled",
+     "Google needs billing switched on for the project before it will search. "
+     "Google gives $200 of free use a month, so this normally costs nothing."),
+    ("service_disabled",
+     "The Places API isn't switched on for this Google project yet. Enable "
+     "'Places API (New)' in the Google Cloud console."),
+    ("invalid api key provided",
+     "Stripe didn't accept that key. Copy it again from the Stripe dashboard — "
+     "it starts with sk_."),
+    ("failed to resolve",
+     "No internet connection, or it dropped mid-request. Check the Wi-Fi and "
+     "try again."),
+    ("max retries exceeded",
+     "Couldn't reach the service — probably the internet connection. Try again "
+     "in a moment."),
+)
+
+
+def explain(e, limit: int = 200) -> str:
+    """Turn a service failure into a sentence the user can act on.
+
+    Anything unrecognised comes through as-is (trimmed), because a raw message
+    is still better than a vague one.
+    """
+    text = str(e).strip()
+    low = text.lower()
+    for needle, plain in PLAIN_ERRORS:
+        if needle in low:
+            return plain
+    return text[:limit]
+
+
 class Services:
     def __init__(self, config: dict):
         self.config = config
@@ -1159,7 +1217,7 @@ you do not know instead of inventing a lead, a figure, or a setting."""
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as e:
-            raise ServiceError(f"Email research failed: {e}") from e
+            raise ServiceError(f"Email research failed: {explain(e)}") from e
         if response.stop_reason == "refusal":
             return {"found": False, "note": "Claude declined this lookup."}
         text = "".join(b.text for b in response.content if b.type == "text")
@@ -1434,9 +1492,9 @@ class Agent:
         except Exception as e:
             # Roll back so the lead can be retried.
             self.db.claim(lead_id, [STAGE_CONTACTED], STAGE_FOUND)
-            self.db.update_lead(lead_id, error=str(e)[:500])
-            self.db.log(lead_id, "outreach_failed", str(e)[:500], needs_attention=True)
-            return {"ok": False, "error": str(e)}
+            self.db.update_lead(lead_id, error=explain(e, 500))
+            self.db.log(lead_id, "outreach_failed", explain(e, 500), needs_attention=True)
+            return {"ok": False, "error": explain(e)}
         self.db.update_lead(
             lead_id, thread_id=sent["thread_id"],
             last_rfc_id=sent["rfc_id"], error=None)
@@ -1451,8 +1509,9 @@ class Agent:
         try:
             inbound = self.services.email_inbound_since(since)
         except Exception as e:
-            self.db.log(None, "poll_error", f"Inbound email poll failed: {e}"[:500])
-            return {"ok": False, "error": str(e)}
+            self.db.log(None, "poll_error",
+                        f"Inbound email poll failed: {explain(e, 400)}"[:500])
+            return {"ok": False, "error": explain(e)}
         handled = 0
         earliest_skipped = None  # a message we deliberately left for the next poll
         for msg in inbound:
@@ -1514,7 +1573,7 @@ class Agent:
             intent = self.services.classify_reply(dict(lead), stage, body)
         except Exception as e:
             self.db.log(lead_id, "classify_failed",
-                        f"Couldn't classify reply ({e}) — handle manually.",
+                        f"Couldn't classify reply ({explain(e, 300)}) — handle manually.",
                         needs_attention=True)
             return
 
@@ -1605,11 +1664,11 @@ class Agent:
                     self.db.update_lead(lead_id,
                                         stage_before_error=STAGE_BUILDING_PREVIEW)
                 self.db.log(lead_id, "preview_failed",
-                            f"Gave up building preview after {attempts} attempts: {e}",
+                            f"Gave up building preview after {attempts} attempts: {explain(e, 300)}",
                             needs_attention=True)
             else:
                 self.db.log(lead_id, "preview_retry",
-                            f"Preview step failed (attempt {attempts}): {e}"[:500])
+                            f"Preview step failed (attempt {attempts}): {explain(e, 400)}"[:500])
 
     # -- payment link pipeline --------------------------------------------
 
@@ -1660,11 +1719,11 @@ class Agent:
                     self.db.update_lead(lead_id,
                                         stage_before_error=STAGE_SENDING_PAYMENT_LINK)
                 self.db.log(lead_id, "payment_link_failed",
-                            f"Gave up sending payment link after {attempts} attempts: {e}",
+                            f"Gave up sending payment link after {attempts} attempts: {explain(e, 300)}",
                             needs_attention=True)
             else:
                 self.db.log(lead_id, "payment_link_retry",
-                            f"Payment-link step failed (attempt {attempts}): {e}"[:500])
+                            f"Payment-link step failed (attempt {attempts}): {explain(e, 400)}"[:500])
 
     def _resend_payment_link(self, lead_id: int, reply_rfc_id: str) -> None:
         """A lead replied after getting the link. Re-send the SAME link if the
@@ -1675,7 +1734,7 @@ class Agent:
         try:
             session = self.services.stripe_get_session(lead["stripe_session_id"])
         except Exception as e:
-            self.db.log(lead_id, "stripe_poll_error", str(e)[:500], needs_attention=True)
+            self.db.log(lead_id, "stripe_poll_error", explain(e, 500), needs_attention=True)
             return
         if session["payment_status"] == "paid":
             return  # payment poller will pick it up
@@ -1700,7 +1759,7 @@ class Agent:
                 in_reply_to_rfc_id=reply_rfc_id)
             self.db.update_lead(lead_id, last_rfc_id=sent["rfc_id"])
         except Exception as e:
-            self.db.log(lead_id, "email_failed", str(e)[:500], needs_attention=True)
+            self.db.log(lead_id, "email_failed", explain(e, 500), needs_attention=True)
 
     def new_payment_link(self, lead_id: int) -> dict:
         """Manual action: replace an EXPIRED session with a fresh one."""
@@ -1742,7 +1801,7 @@ class Agent:
             try:
                 session = self.services.stripe_get_session(lead["stripe_session_id"])
             except Exception as e:
-                self.db.log(lead["id"], "stripe_poll_error", str(e)[:500])
+                self.db.log(lead["id"], "stripe_poll_error", explain(e, 500))
                 continue
             if session["payment_status"] == "paid":
                 if self.db.claim(lead["id"], [STAGE_PAYMENT_LINK_SENT], STAGE_PAID):
@@ -1815,7 +1874,7 @@ class Agent:
             # so delivery keeps retrying, and flag it loudly.
             self.db.claim(lead_id, [STAGE_DEPLOYING_FINAL], STAGE_PAID)
             self.db.log(lead_id, "delivery_retry",
-                        f"Final delivery failed (attempt {attempts}): {e} — "
+                        f"Final delivery failed (attempt {attempts}): {explain(e, 300)} — "
                         "they HAVE paid; delivery will retry automatically.",
                         needs_attention=attempts == MAX_ATTEMPTS)
 
@@ -1931,7 +1990,7 @@ class Agent:
                 added += self.find_leads(query)["added"]
             except Exception as e:
                 self.db.log(None, "auto_search_failed",
-                            f"Search {query!r} failed: {e}"[:400])
+                            f"Search {query!r} failed: {explain(e, 300)}"[:400])
         if added:
             waiting = len(self.db.leads_awaiting_approval())
             need_email = len(self.db.leads_needing_email())
@@ -1958,7 +2017,7 @@ class Agent:
             try:
                 result = self.services.research_email(dict(lead))
             except Exception as e:
-                self.db.log(lead["id"], "research_failed", str(e)[:300])
+                self.db.log(lead["id"], "research_failed", explain(e, 300))
                 self.db.update_lead(lead["id"], researched_at=_now())
                 continue
             self.db.update_lead(lead["id"], researched_at=_now())
