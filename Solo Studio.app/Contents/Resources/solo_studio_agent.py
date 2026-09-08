@@ -768,9 +768,10 @@ class ServiceError(RuntimeError):
 # and the button to press. Matched against the error text, first hit wins.
 PLAIN_ERRORS = (
     ("credit balance is too low",
-     "Claude has run out of credit. Open console.anthropic.com, go to Plans & "
-     "Billing and add some — $5 lasts a long way, a whole website costs cents. "
-     "Your key is fine; nothing else needs changing."),
+     "This Anthropic account has $0 of API credit — the key itself is fine. "
+     "Add $5 at console.anthropic.com/settings/billing. A Claude Pro or Max "
+     "subscription doesn't count, and each account in the console's switcher "
+     "has its own balance."),
     ("invalid x-api-key",
      "Claude didn't accept that key. Copy a fresh one from console.anthropic.com "
      "and paste it on the Setup page."),

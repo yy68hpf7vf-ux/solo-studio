@@ -1011,6 +1011,9 @@ never shown again — leave a box blank to keep what's already saved.</p>
   <div style="margin-top:11px">
     <a class="btn btn-primary" href="{{ k.url }}" target="_blank"
        rel="noopener noreferrer">Open {{ k.site }} →</a>
+    {% if k.extra_url %}<a class="btn" href="{{ k.extra_url }}" target="_blank"
+       rel="noopener noreferrer" style="margin-left:7px">{{ k.extra_label }} →</a>
+    {% endif %}
   </div>
   <label>Paste the key here</label>
   <input type="password" name="{{ k.field }}" placeholder="{{ k.hint }}"
@@ -3609,8 +3612,15 @@ KEY_FIELDS = [
             "Name it <i>Solo Studio</i> and click <b>Add</b>.",
             "Copy the key <b>now</b> — the site won't show it again.",
         ],
-        "note": "Pay-as-you-go. Add $5 of credit under Billing to start; "
-                "designing a site costs cents, not dollars.",
+        "extra_url": "https://console.anthropic.com/settings/billing",
+        "extra_label": "Add credit",
+        "note": "Pay-as-you-go, and separate from a Claude Pro or Max "
+                "subscription — paying for Claude in the browser buys you "
+                "nothing here. Add $5 of credit under Billing to start; "
+                "designing a site costs cents, not dollars. Make sure the "
+                "credit goes to the same account the key came from: if the "
+                "switcher at the top-left of the console offers more than one, "
+                "they each have their own balance.",
     },
     {
         "field": "inkbox_api_key",

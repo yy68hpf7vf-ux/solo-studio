@@ -26,13 +26,19 @@ class ExplainTest(unittest.TestCase):
         at 'purcha', with the answer past the cut."""
         plain = core.explain(Exception(ANTHROPIC_NO_CREDIT))
         self.assertIn("console.anthropic.com", plain)
-        self.assertIn("Billing", plain)
+        self.assertIn("billing", plain.lower())
         self.assertNotIn("{", plain)
         self.assertNotIn("invalid_request_error", plain)
 
     def test_out_of_credit_does_not_blame_the_key(self):
-        """Sending the user off to replace a working key wastes their evening."""
-        self.assertIn("key is fine", core.explain(Exception(ANTHROPIC_NO_CREDIT)))
+        """Sending the user off to replace a working key wastes their evening,
+        and a red error under a key box is a strong suggestion to do just
+        that. Say the key is fine, and never say to replace it."""
+        plain = core.explain(Exception(ANTHROPIC_NO_CREDIT)).lower()
+        self.assertIn("key", plain)
+        self.assertIn("fine", plain)
+        for replace_it in ("paste", "fresh", "copy a", "create key"):
+            self.assertNotIn(replace_it, plain)
 
     def test_a_rejected_key_does_say_to_replace_it(self):
         plain = core.explain(Exception(
@@ -59,12 +65,41 @@ class ExplainTest(unittest.TestCase):
     def test_unrecognised_messages_are_trimmed_not_dropped(self):
         self.assertEqual(len(core.explain(Exception("x" * 900), 120)), 120)
 
+    # The tightest place a translated message ends up: the pipeline writes
+    # "Search 'roofers in Napanoch, NY' failed: <message>" and cuts at 400.
+    TIGHTEST_CAP = 400
+    LONGEST_PREFIX = 60
+
     def test_a_translated_message_is_never_truncated_mid_word(self):
-        """The whole point: the sentence has to survive the trim."""
+        """The whole point: the sentence has to survive every trim it passes
+        through, or we are back to 'upgrade or purcha'."""
+        room = self.TIGHTEST_CAP - self.LONGEST_PREFIX
         for _, plain in core.PLAIN_ERRORS:
             with self.subTest(plain=plain[:40]):
                 self.assertTrue(plain.rstrip().endswith("."))
-                self.assertLessEqual(len(plain), 200)
+                self.assertLessEqual(len(plain), room)
+
+    def test_the_wrappers_really_do_leave_that_much_room(self):
+        """If a caller ever trims harder than the messages assume, this is
+        what notices."""
+        import inspect
+        import re
+        import dashboard_app as dash
+        longest = max(len(p) for _, p in core.PLAIN_ERRORS)
+        for mod in (core, dash):
+            for cap in re.findall(r"explain\(e(?:, \d+)?\)\}?\"?\[:(\d+)\]",
+                                  inspect.getsource(mod)):
+                with self.subTest(module=mod.__name__, cap=cap):
+                    self.assertGreaterEqual(int(cap),
+                                            longest + self.LONGEST_PREFIX)
+
+    def test_out_of_credit_covers_what_people_get_wrong(self):
+        """Two ways to add credit and still see this error: paying for a
+        Claude subscription instead, and topping up a different account than
+        the key belongs to."""
+        plain = core.explain(Exception(ANTHROPIC_NO_CREDIT))
+        self.assertIn("subscription", plain)
+        self.assertIn("switcher", plain)
 
 
 class WiredUpTest(unittest.TestCase):
