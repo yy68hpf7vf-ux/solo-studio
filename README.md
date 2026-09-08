@@ -3,12 +3,10 @@
 An automated lead-gen + sales pipeline for a one-person web design studio.
 
 Dark by design — indigo ground, hot pink accent, soft glass panels and
-rounded corners. Ribbons of light drift behind the
-whole app: they lean as you move the pointer (or tilt your phone), brighten as
-the pipeline gets busier, and flare for a moment whenever a reply or a payment
-lands. If your device can't keep that smooth, the app measures its own frame
-rate and quietly steps the effect down rather than stuttering; turn on Reduce
-Motion in macOS or iOS and it stops moving altogether.
+rounded corners. The backdrop is a still wash of colour: there was a drifting
+light show here for a while, and it was taken out again. Panels still lean
+very slightly toward the pointer and catch a highlight, and turning on Reduce
+Motion in macOS or iOS stops even that.
 
 **What it does, end to end:**
 

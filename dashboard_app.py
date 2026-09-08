@@ -308,51 +308,14 @@ body{margin:0;min-height:100vh;color:var(--ink);background:var(--bg);
   font:15px/1.55 -apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;
   -webkit-font-smoothing:antialiased}
 body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
-  background:linear-gradient(180deg,var(--bg2),var(--bg) 52%)}
+  background:
+    radial-gradient(58vw 42vw at 78% -6%, rgba(244,114,182,.11), transparent 62%),
+    radial-gradient(46vw 38vw at 6% 96%, rgba(129,140,248,.10), transparent 66%),
+    linear-gradient(180deg,var(--bg2),var(--bg) 52%)}
 
-/* The living backdrop. Drawn small and crisp, then blurred by the compositor —
-   far cheaper than painting soft edges in canvas, and it is what gives the
-   ribbons their glow. */
-/* The living backdrop.
-
-   Every frame of this is composited, never repainted. Each ribbon is drawn into
-   a small canvas once, at load, and from then on only moves — CSS transforms the
-   browser can hand straight to the compositor. Redrawing a full-screen canvas
-   every frame instead measured 8fps against 60 on a machine without a GPU, and
-   plenty of phones are that machine when they are hot or saving battery.
-
-   Softness comes from the drawing (layered strokes) and from the browser
-   smoothing a small texture up to full size — not from a CSS blur, which is the
-   single most expensive thing a page like this can ask for. */
-#aurora{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;
-  opacity:.5;transition:opacity 1.2s ease;
-  transform:translate3d(calc(var(--px,0) * 26px), calc(var(--py,0) * 20px), 0)}
-#aurora canvas{position:absolute;left:-30%;width:160%;height:64vh;
-  will-change:transform;mix-blend-mode:screen}
-/* four depths: the further back, the slower and the less it answers the pointer */
-#aurora .l0{top:-14vh;animation:drift0 46s ease-in-out infinite;
-  transform:translate3d(calc(var(--px,0) * 6px), calc(var(--py,0) * 5px),0)}
-#aurora .l1{top:12vh; animation:drift1 61s ease-in-out infinite}
-#aurora .l2{top:44vh; animation:drift2 53s ease-in-out infinite}
-#aurora .l3{top:70vh; animation:drift3 39s ease-in-out infinite}
-@keyframes drift0{0%,100%{transform:translate3d(-5%,0,0)   rotate(-1.6deg) scale(1.04)}
-                  50%    {transform:translate3d( 5%,2.5vh,0) rotate( 1.4deg) scale(1.12)}}
-@keyframes drift1{0%,100%{transform:translate3d( 6%,1.5vh,0) rotate( 1.8deg) scale(1.08)}
-                  50%    {transform:translate3d(-6%,-2vh,0)  rotate(-1.2deg) scale(1.0)}}
-@keyframes drift2{0%,100%{transform:translate3d(-4%,-1vh,0)  rotate( 1.1deg) scale(1.0)}
-                  50%    {transform:translate3d( 7%,2vh,0)   rotate(-1.7deg) scale(1.1)}}
-@keyframes drift3{0%,100%{transform:translate3d( 3%,2vh,0)   rotate(-1.3deg) scale(1.12)}
-                  50%    {transform:translate3d(-7%,-1.5vh,0) rotate( 1.6deg) scale(1.02)}}
-/* the whole field brightens and swells for a moment when something happens */
-#aurora.pulse{animation:auroraPulse 2.4s ease-out}
-@keyframes auroraPulse{0%{opacity:.5}18%{opacity:.78}100%{opacity:.5}}
-
-/* Set by the watchdog below when the device can't keep up. Tier 1 halves the
-   moving layers; tier 2 stops the drift and leaves the ribbons standing still,
-   which still looks like the desktop, just without the breathing. */
-#aurora.tier1 .l1,#aurora.tier1 .l3{display:none}
-#aurora.tier2 canvas{animation:none!important}
-#aurora.tier2{transform:none!important}
+/* A still backdrop: one soft wash of colour behind the app, painted once by
+   the compositor and never touched again. There was a drifting aurora here;
+   it was asked for, then asked to go. */
 
 /* Depth: panels sit above the light and lean very slightly toward the pointer.
    Kept under two degrees — enough to feel physical, not enough to smear text. */
@@ -373,11 +336,6 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 .card.lift::after{opacity:1}
 
 @media (prefers-reduced-motion:reduce){
-  #aurora,#aurora canvas{animation:none!important;transform:none!important}
-  #aurora{opacity:.55}
-  body::before{background:
-    radial-gradient(58vw 42vw at 78% -6%, rgba(244,114,182,.11), transparent 62%),
-    linear-gradient(180deg,var(--bg2),var(--bg) 52%)}
   .card,.stat{transition:none}
 }
 
@@ -518,10 +476,6 @@ td a:hover{color:var(--acc)}
 }
 </style></head>
 <body>
-<div id="aurora" aria-hidden="true">
-  <canvas class="l0"></canvas><canvas class="l1"></canvas>
-  <canvas class="l2"></canvas><canvas class="l3"></canvas>
-</div>
 <header>
   <span class="brand">Solo Studio</span>
   <a href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -553,135 +507,6 @@ td a:hover{color:var(--acc)}
 </main>
 <div id="live-pill" hidden>New activity — tap to refresh</div>
 <span id="live-stamp" hidden data-stamp="{{ live_stamp }}"></span>
-<script>
-/* ---------------------------------------------------------------------------
-   The living backdrop.
-
-   Ribbons of light drifting behind the app, in the spirit of the Mac desktop.
-   Three things move them: time, where your pointer is (each ribbon at its own
-   depth, so the field parallaxes), and the business itself — how much is in
-   flight sets the energy, and a payment or a new reply sends a bright pulse
-   rolling through.
-
-   Deliberately cheap: half-resolution buffer, crisp strokes blurred by CSS,
-   30fps, asleep whenever the tab is hidden, and switched off entirely for
-   anyone who asked for reduced motion.
---------------------------------------------------------------------------- */
-(function () {
-  var field = document.getElementById('aurora');
-  if (!field) return;
-  var layers = [].slice.call(field.querySelectorAll('canvas'));
-  if (!layers.length) return;
-  var slow = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)');
-
-  /* Four bands of ribbons. Each is painted once; after that the CSS moves it. */
-  var BANDS = [
-    { ribbons: 2, hue: [244,114,182], width: 30, alpha: 0.17 },
-    { ribbons: 2, hue: [129,140,248], width: 22, alpha: 0.15 },
-    { ribbons: 2, hue: [192,132,252], width: 34, alpha: 0.16 },
-    { ribbons: 2, hue: [ 99, 91,200], width: 42, alpha: 0.12 }
-  ];
-  var W = 360, H = 200;                       /* tiny — CSS smooths it up to full size */
-
-  function paint(canvas, band, seed) {
-    canvas.width = W; canvas.height = H;
-    var g = canvas.getContext('2d');
-    if (!g) return;
-    g.clearRect(0, 0, W, H);
-    g.globalCompositeOperation = 'lighter';
-    g.lineCap = 'round'; g.lineJoin = 'round';
-
-    for (var i = 0; i < band.ribbons; i++) {
-      var y = H * (0.26 + i * 0.26) + Math.sin(seed + i * 2.3) * 16,
-          sway = 28 + Math.sin(seed * 1.7 + i) * 14;
-      g.beginPath();
-      g.moveTo(-30, y);
-      g.bezierCurveTo(W * 0.22, y - sway, W * 0.42, y + sway * 1.2, W * 0.6, y - sway * 0.3);
-      g.bezierCurveTo(W * 0.76, y - sway * 1.3, W * 0.9, y + sway * 0.7, W + 30, y);
-      /* wide+faint, then tight+bright: a soft falloff with no filter involved */
-      for (var pass = 0; pass < 3; pass++) {
-        g.lineWidth = band.width * [2.2, 1.3, 0.62][pass];
-        g.strokeStyle = 'rgba(' + band.hue[0] + ',' + band.hue[1] + ',' + band.hue[2]
-                      + ',' + (band.alpha * [0.26, 0.5, 1][pass]).toFixed(3) + ')';
-        g.stroke();
-      }
-    }
-  }
-  layers.forEach(function (c, i) { paint(c, BANDS[i], i * 1.9); });
-
-  /* Pointer parallax. One CSS variable, written at most once a frame, so the
-     browser moves existing layers instead of redrawing anything. */
-  if (!(slow && slow.matches)) {
-    var tx = 0, ty = 0, cx = 0, cy = 0, queued = false;
-    function apply() {
-      queued = false;
-      cx += (tx - cx) * 0.08;
-      cy += (ty - cy) * 0.08;
-      field.style.setProperty('--px', cx.toFixed(3));
-      field.style.setProperty('--py', cy.toFixed(3));
-      if (Math.abs(tx - cx) > 0.002 || Math.abs(ty - cy) > 0.002) nudge();
-    }
-    function nudge() { if (!queued) { queued = true; requestAnimationFrame(apply); } }
-    addEventListener('pointermove', function (e) {
-      tx = (e.clientX / innerWidth - 0.5) * 2;
-      ty = (e.clientY / innerHeight - 0.5) * 2;
-      nudge();
-    }, { passive: true });
-    addEventListener('deviceorientation', function (e) {
-      if (e.gamma == null) return;
-      tx = Math.max(-1, Math.min(1, e.gamma / 40));
-      ty = Math.max(-1, Math.min(1, (e.beta - 45) / 40));
-      nudge();
-    }, { passive: true });
-  }
-
-  /* Whether any of this is affordable is a property of the device, not of the
-     code — a hot phone in battery saver is a different machine from the same
-     phone plugged in. So measure real frames here and step down if the page
-     can't hold a smooth rate. Cheap to run, and it only ever runs twice. */
-  function watchdog(rechecks) {
-    var frames = 0, t0 = performance.now();
-    (function tick() {
-      frames++;
-      var dt = performance.now() - t0;
-      if (dt < 1200) { requestAnimationFrame(tick); return; }
-      var fps = frames / (dt / 1000),
-          cls = field.classList;
-      if (fps < 45 && !cls.contains('tier2')) {
-        /* step down one level and look again — repeat until it is smooth */
-        cls.add(cls.contains('tier1') ? 'tier2' : 'tier1');
-        setTimeout(function () { watchdog(rechecks); }, 700);
-        return;
-      }
-      /* smooth: check again later, in case the device gets hot or throttles */
-      if (rechecks > 0) setTimeout(function () { watchdog(rechecks - 1); }, 25000);
-    })();
-  }
-  if (!(slow && slow.matches)) setTimeout(function () { watchdog(2); }, 900);
-
-  /* What the business is doing, from the poll below. Opacity and drift speed
-     only — both compositor properties, so this costs nothing per frame. */
-  window.__solo = {
-    state: function (d) {
-      if (!d) return;
-      var busy = (d.active || 0) * 0.12 + (d.pending || 0) * 0.05
-               + (d.attention || 0) * 0.08 + Math.min(0.3, (d.revenue || 0) / 6000);
-      var energy = Math.max(0, Math.min(1, busy));
-      field.style.opacity = (0.4 + energy * 0.3).toFixed(2);
-      layers.forEach(function (c, i) {
-        var base = [46, 61, 53, 39][i];
-        c.style.animationDuration = (base * (1 - energy * 0.4)).toFixed(1) + 's';
-      });
-    },
-    pulse: function () {
-      field.classList.remove('pulse');
-      void field.offsetWidth;                 /* restart the keyframe */
-      field.classList.add('pulse');
-    }
-  };
-})();
-</script>
-
 <script>
 /* Panels lean toward the pointer and catch a highlight — the depth you can
    feel rather than see. Pointer devices only, and never under reduced motion. */
@@ -737,11 +562,9 @@ td a:hover{color:var(--acc)}
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d) return;                       /* signed out or offline */
-        if (window.__solo) window.__solo.state(d);
         var stamp = d.last_event + ':' + d.pending + ':' + d.attention;
         if (!seen) { seen = stamp; return; }   /* no baseline: adopt this one */
         if (stamp === seen) return;
-        if (window.__solo) window.__solo.pulse();   /* something happened */
         if (busy()) { pill.hidden = false; }  /* don't wipe what you typed */
         else { location.reload(); }
       })

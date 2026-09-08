@@ -217,37 +217,47 @@ class PhoneGateTest(unittest.TestCase):
         import inspect
         self.assertNotIn("Quit Solo Studio", inspect.getsource(self.dash))
 
-    # -- the living backdrop -------------------------------------------------
+    # -- the backdrop, now that it stands still -----------------------------
 
-    def test_every_page_carries_the_backdrop(self):
+    def test_no_page_carries_a_moving_backdrop(self):
+        """It was built, then it was not wanted. Gone means gone — not left
+        in the markup doing nothing."""
         for path in ("/", "/approve", "/team", "/activity", "/ask",
-                     "/setup", "/updates"):
+                     "/setup", "/updates", "/house", "/calls"):
             html = self.client.get(
                 path, environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
             with self.subTest(page=path):
-                self.assertIn('id="aurora"', html)
-                self.assertEqual(html.count("<canvas"), 4)
+                self.assertNotIn('id="aurora"', html)
+                self.assertNotIn("#aurora", html)
+                self.assertNotIn("<canvas", html)
+                self.assertNotIn("@keyframes drift", html)
 
-    def test_backdrop_never_blurs_a_full_screen_layer(self):
-        """A CSS blur on the moving layers is what took the page to 8fps.
-        Softness comes from the drawing instead — keep it that way."""
+    def test_nothing_animates_across_the_whole_screen(self):
+        """The reason it was expensive: a full-screen layer that changes every
+        frame. Nothing fixed and full-bleed may animate again."""
         import re
         html = self.client.get(
             "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
-        block = re.search(r"#aurora\s*\{([^{}]*)\}", html)
-        self.assertIsNotNone(block)
-        self.assertNotIn("blur", block.group(1))
-        layer = re.search(r"#aurora canvas\s*\{([^{}]*)\}", html)
-        self.assertIsNotNone(layer)
-        self.assertNotIn("blur", layer.group(1))
+        style = html[html.index("<style"):html.index("</style>")]
+        for rule in re.findall(r"([^{}]+)\{([^{}]*)\}", style):
+            selector, body = rule[0].strip(), rule[1]
+            if "position:fixed" in body and "inset:0" in body:
+                with self.subTest(selector=selector[-60:]):
+                    self.assertNotIn("animation", body)
+                    self.assertNotIn("blur", body)
 
-    def test_backdrop_can_step_itself_down(self):
-        """Slow devices must have somewhere to fall back to."""
+    def test_the_page_still_has_a_background_of_its_own(self):
+        """Removing the light show must not leave a flat black page: the
+        viewer paints its own ground behind anything transparent."""
         html = self.client.get(
             "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
-        self.assertIn("#aurora.tier1", html)
-        self.assertIn("#aurora.tier2", html)
-        self.assertIn("prefers-reduced-motion", html)
+        self.assertIn("body::before", html)
+        self.assertIn("gradient", html)
+
+    def test_the_live_poll_does_not_call_into_what_was_removed(self):
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        self.assertNotIn("__solo", html)
 
     def test_live_feed_carries_what_the_backdrop_reacts_to(self):
         r = self.client.get("/live", environ_base={"REMOTE_ADDR": "127.0.0.1"})
