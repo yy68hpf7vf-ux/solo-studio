@@ -90,11 +90,14 @@ returns a business's *Yelp page*, never its own website, so those leads are
 marked as a directory page only and are a weaker signal than the rest, where
 the real site got checked.
 
-**The live map.** The **Map** page draws every city JARVIS has actually looked
-in, at the coordinates Google gave for it, sized by how many leads he found
-there — with the city he's working on right now pinging. Cities he hasn't
-reached aren't drawn, because he hasn't looked them up yet; the map fills in as
-he works. It refreshes itself every few seconds.
+**The live map.** The **Map** page draws the United States — real state
+outlines from public-domain Census boundary data, embedded in the app so it
+works offline — and puts a dot on every city JARVIS has actually looked in, at
+the coordinates Google gave for it, sized by how many leads he found there. The
+city he's working on right now pings. Cities he hasn't reached aren't drawn,
+because he hasn't looked them up yet; the map fills in as he works, and
+refreshes itself every few seconds. The coastline and the dots share one
+projection, so a city can't land in the wrong state.
 
 **Filtering what you look at.** The Approve page has the same three widths as a
 filter — Everyone / Strict / Normal / Wide — so you can narrow the queue to
@@ -114,7 +117,15 @@ thousand leads. It now goes cheapest-first:
 | A model with web search — small model, two searches, capped | ~3.5¢ |
 
 That last one is capped at 200 paid lookups a month, so the worst the app can
-spend on addresses is about $7. The free routes carry on after the cap.
+spend on addresses is about $7. The free routes carry on after the cap, and
+Setup shows what has actually been used — lookups and Google calls both — so
+it is a number, not a guess. Set the cap to 0 to never spend Claude credit on
+addresses at all.
+
+**What else uses Claude credit.** Finding leads uses none: that is Google and
+OpenStreetMap. Beyond address lookups, credit is only spent when something real
+happens — reading a reply that arrived, designing a site for someone who asked
+for one, answering you on the Ask page. None of it runs in a loop.
 
 **Finding the email.** Two ways, picked automatically. Where the business has a
 domain — a dead or parked site — **Hunter** *(optional)* looks up addresses on
