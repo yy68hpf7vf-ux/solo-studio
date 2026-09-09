@@ -186,6 +186,18 @@ nothing is happening, the screen says why.
 down, Yelp not set up — the crawl still runs, because the city list is built in
 rather than looked up.
 
+**Only businesses.** A map search returns everything on the map — sheriff's
+offices, schools, churches, the city water department. None of them buy
+websites, so they're dropped before they reach the queue, on every source.
+The category is trusted; a name is not, because "Church Street Auto Repair"
+and "Courthouse Coffee" are real businesses and a blunt word match throws them
+away. Losing a real lead costs more than letting one town hall through.
+
+**What's gone out.** The Dashboard says how many cold emails were sent today,
+against the daily cap, how many all told, and how many are waiting for you.
+Nothing leaves without your approval, so that line is a record of your own
+decisions.
+
 **He starts on launch.** Opening the app puts him to work: check what needs
 you, crawl if there's map left, look up missing addresses.
 

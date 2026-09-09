@@ -398,3 +398,67 @@ class ApproveFiltersTest(unittest.TestCase):
         self.page("?have=no")
         self.page("?only=none&have=yes")
         self.assertEqual(len(self.dash.STATE.db.all_leads()), before)
+
+
+class NotABusinessTest(unittest.TestCase):
+    """"It was giving me some sheriff office stuff."
+
+    A map search returns everything on the map. A sheriff's office has no
+    website to sell and nobody to sell it to.
+    """
+
+    def setUp(self):
+        import solo_studio_agent as core
+        self.core = core
+
+    def dropped(self, name, category=""):
+        return not self.core.is_a_business(name, category)
+
+    def test_a_sheriffs_office_is_not_a_lead(self):
+        self.assertTrue(self.dropped("El Paso County Sheriff's Office",
+                                     "Police department"))
+
+    def test_nor_are_schools_churches_libraries_or_the_city(self):
+        for name, cat in (("Ysleta High School", "School"),
+                          ("First Baptist Church", "Church"),
+                          ("El Paso Public Library", "Library"),
+                          ("City of El Paso Water", "Government office"),
+                          ("Sunland Park Fire Department", "Fire station"),
+                          ("Downtown Post Office", "Post office")):
+            with self.subTest(name=name):
+                self.assertTrue(self.dropped(name, cat))
+
+    def test_they_are_caught_without_a_category_too(self):
+        """OpenStreetMap often has a name and little else."""
+        for name in ("Ysleta High School", "City of El Paso Water",
+                     "El Paso County Sheriff", "Hudson School District"):
+            with self.subTest(name=name):
+                self.assertTrue(self.dropped(name))
+
+    def test_a_real_business_with_an_awkward_name_is_kept(self):
+        """The trap in the other direction, and the more expensive one: these
+        are the leads, and a blunt word match throws them away."""
+        for name, cat in (("Church Street Auto Repair", "Car repair"),
+                          ("Church Street Auto Repair", ""),
+                          ("Trinity Church Landscaping", ""),
+                          ("School Street Barbers", "Barber shop"),
+                          ("Old Jail Brewing Company", "Brewery"),
+                          ("Courthouse Coffee", "Coffee shop"),
+                          ("Town Hall Tavern", "Bar"),
+                          ("The Old Post Office Cafe", "Cafe")):
+            with self.subTest(name=name):
+                self.assertFalse(self.dropped(name, cat))
+
+    def test_ordinary_trades_are_never_touched(self):
+        for name, cat in (("Joe's Plumbing", "Plumber"),
+                          ("Sunrise Landscaping", "Landscaper"),
+                          ("Ray's Roofing", "Roofing contractor")):
+            with self.subTest(name=name):
+                self.assertFalse(self.dropped(name, cat))
+
+    def test_the_filter_runs_on_every_source(self):
+        """Google text, Google nearby, OpenStreetMap and Yelp all land in the
+        same place, so the check belongs there."""
+        import inspect
+        src = inspect.getsource(self.core.Services._triage)
+        self.assertIn("is_a_business", src)

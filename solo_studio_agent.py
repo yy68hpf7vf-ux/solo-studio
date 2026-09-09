@@ -1235,6 +1235,55 @@ def check_website(url: str, timeout: int = SITE_TIMEOUT) -> tuple[str, str]:
         resp.close()
 
 
+# Things that turn up in a map search and are not small businesses that buy
+# websites. A sheriff's office has no website to sell and no owner to sell to.
+#
+# Two lists, because the two signals are not equally safe. The category comes
+# from the map data and can be trusted; a name cannot. "Church Street Auto
+# Repair" is a business, and a blunt name test throws it away — so the name
+# list holds only phrases that cannot belong to a trading business.
+NOT_A_BUSINESS_CATEGORY = (
+    "sheriff", "police", "fire department", "fire station", "courthouse",
+    "city hall", "town hall", "county clerk", "post office", "dmv",
+    "motor vehicles", "library", "school", "university", "college",
+    "church", "mosque", "synagogue", "temple", "chapel", "cathedral",
+    "place of worship", "hospital", "medical center", "prison", "jail",
+    "correctional", "embassy", "consulate", "government", "municipal",
+    "township", "national park", "state park", "cemetery", "airport",
+    "civic center", "convention center", "city government", "county government",
+    "federal", "housing authority", "chamber of commerce", "visitor center",
+    "fairground", "courthouse", "public works", "water district",
+)
+NOT_A_BUSINESS_NAME = (
+    # Only phrases that cannot belong to a trading business. "Courthouse
+    # Coffee", "Town Hall Tavern" and "The Old Post Office Cafe" are all real
+    # businesses, so those words are left to the category test — dropping a
+    # genuine lead costs more than letting one town hall through, which the
+    # owner can skip in a second.
+    "county sheriff", "sheriff s office", "sheriffs office",
+    "police department", "police station", "fire department",
+    "public library", "high school", "elementary school", "middle school",
+    "school district", "board of education", "housing authority",
+    "district attorney", "city of", "county of", "town of", "village of",
+    "department of", "chamber of commerce",
+)
+
+
+def is_a_business(name: str, category: str = "") -> bool:
+    """Is this something a one-person web studio could sell a website to?
+
+    Map searches are full of government offices, schools and churches. They
+    are not leads, and putting them in the queue costs the owner the time to
+    read past them.
+    """
+    cat = (category or "").lower()
+    if any(word in cat for word in NOT_A_BUSINESS_CATEGORY):
+        return False
+    low = " " + re.sub(r"\s+", " ",
+                       re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower())) + " "
+    return not any(" " + word + " " in low for word in NOT_A_BUSINESS_NAME)
+
+
 def _place_row(p: dict) -> dict:
     """One Google place, in the shape a lead is stored in."""
     kind = p.get("primaryTypeDisplayName")
@@ -1358,6 +1407,7 @@ class SearchResults(list):
         self.closed = 0          # rejected: permanently closed
         self.social_only = 0     # kept: only a Facebook/Instagram/Yelp page
         self.by_status = {}      # kept, counted by what's wrong with their site
+        self.not_business = 0    # rejected: a school, a church, a sheriff
 
 
 def describe_search(r: dict) -> str:
@@ -1688,6 +1738,14 @@ class Services:
         """
         keep = QUALITY_LEVELS.get(
             self.config.get("lead_quality", "broken"), QUALITY_LEVELS["broken"])
+        wanted, dropped = [], 0
+        for lead in raw:
+            if is_a_business(lead.get("name"), lead.get("category")):
+                wanted.append(lead)
+            else:
+                dropped += 1
+        raw = wanted
+        results.not_business = dropped
         for lead, (status, note) in zip(raw, self._check_sites(raw)):
             if status not in keep:
                 results.with_site += 1
@@ -1891,7 +1949,9 @@ class Services:
     OSM_SELECTORS = (
         'nwr["shop"]["name"]',
         'nwr["craft"]["name"]',
-        'nwr["office"]["name"]',
+        'nwr["office"~"^(company|estate_agent|insurance|accountant|lawyer|'
+        'travel_agent|it|advertising_agency|architect|financial|employment_agency|'
+        'moving_company|photographer|surveyor|tax_advisor)$"]["name"]',
         'nwr["amenity"~"^(car_repair|car_wash|veterinary|dentist|doctors|'
         'driving_school|childcare|bar|cafe|pharmacy|fuel)$"]["name"]',
     )
@@ -3650,15 +3710,30 @@ class Agent:
             self._advance_delivery(lead["id"])
 
     def tick(self) -> None:
-        """One background iteration: replies, payments, stuck transient stages,
-        and scheduled lead discovery. Never sends cold outreach — that always
-        waits for your approval."""
-        self.process_replies()
-        self.poll_payments()
-        self.tick_transients()
-        self.run_saved_searches()
-        self.crawl()
-        self.research_missing_emails()
+        """One background round. Never sends cold outreach — that always waits
+        for your approval.
+
+        Every part runs on its own. Two things were wrong with doing it in one
+        block: finding leads needs Google and nothing else, yet the whole round
+        was skipped when no mailbox was set up; and one step throwing took the
+        rest of the round down with it, so a mailbox problem quietly stopped
+        the crawling and the researching too.
+        """
+        mailbox = bool(self.config.get("inkbox_api_key"))
+        for name, needed, step in (
+                ("reading replies", mailbox, self.process_replies),
+                ("checking payments", True, self.poll_payments),
+                ("finishing half-done work", True, self.tick_transients),
+                ("saved searches", True, self.run_saved_searches),
+                ("crawling for leads", True, self.crawl),
+                ("looking up addresses", True, self.research_missing_emails)):
+            if not needed:
+                continue
+            try:
+                step()
+            except Exception as e:
+                self.db.log(None, "tick_failed",
+                            f"{name}: {explain(e, 250)}"[:400])
 
     def keep_stocked(self) -> dict:
         """Go and find leads before being asked, when the shelf runs low.

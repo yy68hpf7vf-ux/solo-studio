@@ -206,8 +206,7 @@ class KeepStockedTest(unittest.TestCase):
         """Topping up to fifteen leads was the cap. The crawl covers the map
         instead, so this is the one that has to be in the round."""
         import inspect
-        self.assertIn("self.crawl()",
-                      inspect.getsource(self.core.Agent.tick))
+        self.assertIn("self.crawl", inspect.getsource(self.core.Agent.tick))
 
 
 class GoogleMeterTest(unittest.TestCase):
@@ -555,3 +554,70 @@ class CityListTest(unittest.TestCase):
         self.assertEqual(self.core._state_of("Ellenville, NY 12428"), "NY")
         self.assertEqual(self.core._state_of("nowhere"), "")
         self.assertEqual(self.core._state_of("Springfield, Illinois"), "")
+
+
+class NothingToClickTest(unittest.TestCase):
+    """JARVIS finding leads and looking up addresses on his own.
+
+    Asked for repeatedly, and still not happening, because the whole round was
+    gated on an Inkbox key — which finding leads has nothing to do with.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-auto-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import solo_studio_agent as core
+        self.core = core
+        self.cfg = dict(core.DEFAULT_CONFIG, google_places_api_key="k",
+                        inkbox_api_key="", auto_search_enabled=True,
+                        territory_base="El Paso, TX")
+        self.agent = core.Agent(core.Database(), core.Services(self.cfg),
+                                self.cfg)
+        self.ran = []
+        for name in ("process_replies", "poll_payments", "tick_transients",
+                     "run_saved_searches", "crawl", "research_missing_emails"):
+            setattr(self.agent, name,
+                    (lambda n: lambda *a, **k: self.ran.append(n))(name))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def test_no_mailbox_does_not_stop_him_finding_leads(self):
+        self.agent.tick()
+        self.assertIn("crawl", self.ran)
+        self.assertIn("research_missing_emails", self.ran)
+
+    def test_reading_replies_is_the_only_part_that_needs_a_mailbox(self):
+        self.agent.tick()
+        self.assertNotIn("process_replies", self.ran)
+        self.cfg["inkbox_api_key"] = "ib"
+        self.ran.clear()
+        self.agent.tick()
+        self.assertIn("process_replies", self.ran)
+
+    def test_one_step_failing_does_not_take_the_round_down(self):
+        """A mailbox problem used to stop the crawling and the researching."""
+        self.cfg["inkbox_api_key"] = "ib"
+
+        def boom():
+            self.ran.append("process_replies")
+            raise self.core.ServiceError("mailbox unreachable")
+        self.agent.process_replies = boom
+        self.agent.tick()
+        self.assertIn("crawl", self.ran)
+        self.assertIn("research_missing_emails", self.ran)
+
+    def test_a_failed_step_is_written_down_rather_than_swallowed(self):
+        def boom():
+            raise self.core.ServiceError("Google said no")
+        self.agent.crawl = boom
+        self.agent.tick()
+        kinds = [e["kind"] for e in self.agent.db.recent_events(20)]
+        self.assertIn("tick_failed", kinds)
+
+    def test_the_background_loop_no_longer_asks_for_a_mailbox(self):
+        import inspect
+        import dashboard_app as dash
+        src = inspect.getsource(dash._autopilot_loop)
+        self.assertNotIn('cfg.get("inkbox_api_key")', src)

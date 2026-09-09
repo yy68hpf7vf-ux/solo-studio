@@ -248,8 +248,7 @@ def _autopilot_loop():
         time.sleep(2)                  # let the server finish binding
         STATE.agent.watch()
         if STATE.config.get("autopilot_enabled"):
-            STATE.agent.crawl()
-            STATE.agent.research_missing_emails()
+            STATE.agent.tick()
     except Exception as e:
         try:
             STATE.db.log(None, "autopilot_error", core.explain(e, 500))
@@ -267,7 +266,10 @@ def _autopilot_loop():
             # A stopped app can still be broken, and that is exactly when
             # nobody is looking at it.
             STATE.agent.watch()
-            if cfg.get("autopilot_enabled") and cfg.get("inkbox_api_key"):
+            # No mailbox requirement here: finding leads and looking up
+            # addresses have nothing to do with email, and gating the whole
+            # round on an Inkbox key is what stopped JARVIS working on his own.
+            if cfg.get("autopilot_enabled"):
                 STATE.agent.tick()
         except Exception as e:  # never let the worker die
             try:
@@ -359,6 +361,13 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 .filters .chip:hover{color:var(--ink);border-color:rgba(244,114,182,.4)}
 .filters .chip.on{background:var(--acc);color:var(--acc-ink);font-weight:600;
   border-color:transparent}
+
+/* What has actually gone out. Nothing leaves without approval, so this is a
+   record of decisions the owner made, and it should be in plain sight. */
+.sendbar{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;
+  margin:0 0 16px;padding:11px 15px;border-radius:var(--r-md);
+  background:var(--panel-2);border:1px solid var(--line)}
+.sendbar b{font-size:19px}
 
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
@@ -646,6 +655,17 @@ get started — nothing works until then.</div>
   {% endfor %}
 </div>
 {% endif %}
+
+<div class="sendbar">
+  <div><b>{{ sent_today }}</b> cold email{{ '' if sent_today == 1 else 's' }}
+    sent today{% if cap %} of {{ cap }} allowed{% endif %}</div>
+  <div class="muted">{{ sent_total }} sent all told · {{ pending_count }}
+    waiting for your approval</div>
+  {% if cap and sent_today >= cap %}
+  <div style="color:var(--warn)">Day's limit reached — the rest wait for
+    tomorrow.</div>
+  {% endif %}
+</div>
 
 <div class="statrow">
   {% for s, n in stage_counts %}
@@ -2901,7 +2921,10 @@ def dashboard():
     return _render(DASHBOARD, leads=leads, today_line=core.line_for_today(),
                    stage_counts=[(s, counts[s]) for s in order],
                    attention=db.attention_events(), configured=configured,
-                   findings=current_findings())
+                   findings=current_findings(),
+                   sent_today=db.sends_today(),
+                   sent_total=db.event_counts().get("outreach_sent", 0),
+                   cap=core.setting_int(cfg, "daily_send_cap", 20))
 
 
 
