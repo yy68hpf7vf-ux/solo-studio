@@ -280,6 +280,8 @@ def thinking_model(cfg: dict) -> str:
         return (cfg.get("research_model") or "").strip() or RESEARCH_MODEL
     return (cfg.get("anthropic_model") or "").strip() or MAIN_MODEL
 LOOKUP_CAP = 200          # paid lookups a month, before it stops spending
+# Reading a page costs nothing, so this is bounded only by politeness and time.
+FREE_LOOKUPS_PER_ROUND = 60
 
 
 def _web_search_tool_for(model: str) -> str:
@@ -559,7 +561,8 @@ DEFAULT_CONFIG = {
     # queues what it finds for your approval. It never emails anyone on its own.
     "auto_search_enabled": True,
     "auto_research_enabled": True,    # let the Researcher hunt missing emails
-    "research_per_tick": 3,           # how many leads to research each round
+    "research_per_tick": 8,           # PAID lookups attempted each round
+    "free_lookups_per_round": 60,     # free page reads each round — no budget
     # An address the Researcher found goes straight onto the lead instead of
     # queueing for a second click. It changes nothing about sending: the cold
     # email itself is still read and approved by a person, with that address
@@ -3606,10 +3609,19 @@ class Agent:
         Results are SUGGESTIONS — a human accepts them before any outreach."""
         if not force and not self.config.get("auto_research_enabled"):
             return {"ok": True, "skipped": "researcher off"}
-        if limit is None:
-            limit = max(1, int(self.config.get("research_per_tick", 3) or 3))
-        leads = self.db.leads_to_research(limit)
-        found = 0
+        # Two passes, because the two costs are nothing alike.
+        #
+        # Reading an address off a page the lead already links to is a plain
+        # web request: free, fast, and safe to do to everyone at once. It was
+        # being rationed at three a round alongside the paid lookups, which is
+        # why the Approve tab crawled while the free answers sat there waiting.
+        paid_limit = (limit if limit is not None
+                      else max(1, setting_int(self.config, "research_per_tick", 8)))
+        batch = self.db.leads_to_research(
+            max(paid_limit, setting_int(self.config, "free_lookups_per_round",
+                                        FREE_LOOKUPS_PER_ROUND)))
+        found = self._free_email_pass(batch)
+        leads = [l for l in self.db.leads_to_research(paid_limit)]
         for lead in leads:
             try:
                 result = self._find_email(dict(lead))
@@ -3651,6 +3663,40 @@ class Agent:
                          "The Researcher turned up contact addresses — check "
                          "them on the Approve page.", tags="mag")
         return {"ok": True, "researched": len(leads), "found": found}
+
+    def _free_email_pass(self, leads) -> int:
+        """Read addresses off the pages these leads already link to.
+
+        Free and parallel: a business whose only presence is a Facebook page
+        usually has its address on it, and there is no reason to do one a
+        minute. Anything not answered here is left alone for the paid pass.
+        """
+        with_link = [l for l in leads if (l["social_url"] or "").strip()]
+        if not with_link:
+            return 0
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=SITE_WORKERS) as pool:
+            results = list(pool.map(
+                lambda l: self.services.scrape_email(l["social_url"]), with_link))
+
+        found = 0
+        for lead, (email, source) in zip(with_link, results):
+            if not email:
+                continue          # not answered: the paid pass may still try
+            self.db.update_lead(lead["id"], researched_at=_now(),
+                                suggested_email=email,
+                                suggested_email_source=source[:300],
+                                suggested_email_note="read off their page")
+            if self.config.get("auto_accept_emails", True):
+                self.accept_suggested_email(lead["id"])
+                self.db.log(lead["id"], "email_found",
+                            f"Found {email} for {lead['name']} on their own "
+                            "page — free. Check it before sending.")
+            else:
+                self.db.log(lead["id"], "email_suggested",
+                            f"Found {email} for {lead['name']} — needs your OK.")
+            found += 1
+        return found
 
     def _find_email(self, lead: dict) -> dict:
         """An address for one lead, cheapest route first.

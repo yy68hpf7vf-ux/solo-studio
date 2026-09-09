@@ -146,6 +146,13 @@ about a dollar, and it's the thing you're selling for $500.
 So on the shipped setting, the app cannot spend more than about **$1.75 a month**
 unless a sale is involved.
 
+**Both tabs fill on their own.** Open the app and leave it: **Calls** fills the
+moment leads are found, because a phone number comes with the lead — no lookup,
+no credit. **Approve** fills as addresses turn up, and the free way of getting
+one (reading the page a lead already links to) now runs for the whole batch at
+once instead of a few a minute. A business with no page and no phone-book entry
+stays on Calls, which is what Calls is for.
+
 **Finding the email.** Two ways, picked automatically. Where the business has a
 domain — a dead or parked site — **Hunter** *(optional)* looks up addresses on
 it, which beats guessing. Where there is no website at all there is no domain

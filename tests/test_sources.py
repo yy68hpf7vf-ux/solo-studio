@@ -599,3 +599,64 @@ class NeverStopsResearchingTest(unittest.TestCase):
         self.agent.research_missing_emails(force=True)
         self.assertEqual(self.agent.db.get_lead(self.lead)["email"],
                          "info@x.com")
+
+
+class BothTabsFillUpTest(unittest.TestCase):
+    """"I want to see the calls tab and approve tab filling up with numbers."
+
+    Calls counts leads with a phone; Approve counts leads with an email. The
+    free way to get an email — reading the page a lead already links to — was
+    rationed at three a round alongside the paid lookups, so Approve crawled
+    while free answers sat there waiting.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-tabs-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        self.cfg = dict(core.DEFAULT_CONFIG, anthropic_api_key="k",
+                        spend_level="off")      # no credit, like being out
+        self.svc = core.Services(self.cfg)
+        self.agent = core.Agent(core.Database(), self.svc, self.cfg)
+        self.svc.scrape_email = lambda url: (
+            ("hi@" + url.rsplit("/", 1)[-1] + ".com", url) if url else ("", ""))
+        self.svc.research_email = lambda lead: {"found": False, "note": "no credit"}
+        for i in range(40):
+            self.agent.db.add_lead(
+                place_id=f"p{i}", name=f"Biz {i}", address="a",
+                phone="310-555-%04d" % i, category="Plumber",
+                social_url=(f"https://facebook.com/biz{i}" if i % 2 else None))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def test_calls_fills_the_moment_leads_are_found(self):
+        """A phone number comes with the lead — no lookup, no credit."""
+        self.assertEqual(len(self.agent.db.leads_to_call()), 40)
+
+    def test_one_round_fills_approve_with_every_free_answer(self):
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(len(self.agent.db.leads_awaiting_approval()), 20)
+
+    def test_it_does_not_stop_at_the_paid_batch_size(self):
+        self.cfg["research_per_tick"] = 3
+        self.agent.research_missing_emails(force=True)
+        self.assertGreater(len(self.agent.db.leads_awaiting_approval()), 3)
+
+    def test_the_free_pass_costs_nothing(self):
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(self.agent.paid_lookups_this_month(), 0)
+
+    def test_leads_with_no_page_are_left_for_the_phone(self):
+        """No website and no link is not a failure — it is what the Calls tab
+        is for."""
+        self.agent.research_missing_emails(force=True)
+        left = self.agent.db.leads_needing_email()
+        self.assertEqual(len(left), 20)
+        self.assertTrue(all(l["phone"] for l in left))
+
+    def test_a_page_with_no_address_is_left_for_the_paid_pass(self):
+        self.svc.scrape_email = lambda url: ("", "")
+        self.agent.research_missing_emails(force=True)
+        for lead in self.agent.db.all_leads():
+            self.assertIsNone(lead["researched_at"])
