@@ -277,6 +277,12 @@ class WhichEmailFinderTest(unittest.TestCase):
         self.svc = core.Services(self.cfg)
         self.agent = core.Agent(core.Database(), self.svc, self.cfg)
         self.used = []
+        # Every route stubbed: a test must never reach the real internet, and
+        # the paid one must never reach the real API.
+        self.scraped = ""
+        self.svc.scrape_email = lambda url: (
+            self.used.append("scrape"),
+            (self.scraped, url) if self.scraped else ("", ""))[1]
         self.svc.hunter_email = lambda d: (self.used.append("hunter"),
                                            {"found": True, "email": "a@b.com"})[1]
         self.svc.research_email = lambda lead: (self.used.append("claude"),
@@ -286,9 +292,18 @@ class WhichEmailFinderTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
         os.environ.pop("SOLO_STUDIO_HOME", None)
 
+    def test_the_free_read_is_tried_before_anything_that_costs(self):
+        """A model with web search runs about a dime a lead. Reading the page
+        we already have the link to costs nothing, so it goes first."""
+        self.scraped = "info@joesplumbing.com"
+        r = self.agent._find_email({"id": 1,
+                                    "social_url": "https://joesplumbing.com"})
+        self.assertEqual(self.used, ["scrape"])
+        self.assertEqual(r["email"], "info@joesplumbing.com")
+
     def test_a_dead_site_gives_hunter_a_domain_to_work_with(self):
         self.agent._find_email({"id": 1, "social_url": "https://goneroofing.com"})
-        self.assertEqual(self.used, ["hunter"])
+        self.assertEqual(self.used, ["scrape", "hunter"])
 
     def test_no_website_at_all_goes_to_claude(self):
         self.agent._find_email({"id": 1, "social_url": None})
@@ -297,19 +312,56 @@ class WhichEmailFinderTest(unittest.TestCase):
     def test_a_facebook_page_is_not_a_domain_to_look_up(self):
         self.agent._find_email({"id": 1,
                                 "social_url": "https://facebook.com/joes"})
-        self.assertEqual(self.used, ["claude"])
+        self.assertEqual(self.used, ["scrape", "claude"])
 
     def test_without_a_hunter_key_everything_goes_to_claude(self):
         self.cfg["hunter_api_key"] = ""
         self.agent._find_email({"id": 1, "social_url": "https://gone.com"})
-        self.assertEqual(self.used, ["claude"])
+        self.assertEqual(self.used, ["scrape", "claude"])
 
     def test_hunter_failing_falls_back_rather_than_giving_up(self):
         def boom(domain):
             raise core.ServiceError("Hunter's monthly quota is used up.")
         self.svc.hunter_email = boom
         self.agent._find_email({"id": 1, "social_url": "https://gone.com"})
-        self.assertEqual(self.used, ["claude"])
+        self.assertEqual(self.used, ["scrape", "claude"])
+
+    # -- the money -----------------------------------------------------------
+
+    def test_paid_lookups_are_counted(self):
+        for _ in range(3):
+            self.agent._find_email({"id": 1, "social_url": None})
+        self.assertEqual(self.agent.paid_lookups_this_month(), 3)
+
+    def test_it_stops_spending_at_the_monthly_cap(self):
+        self.cfg["monthly_lookup_cap"] = 2
+        for _ in range(4):
+            self.agent._find_email({"id": 1, "social_url": None})
+        self.assertEqual(self.used.count("claude"), 2)
+
+    def test_free_lookups_carry_on_after_the_cap(self):
+        self.cfg["monthly_lookup_cap"] = 0
+        self.scraped = "info@x.com"
+        r = self.agent._find_email({"id": 1, "social_url": "https://x.com"})
+        self.assertTrue(r["found"])
+
+    def test_the_cap_says_what_happened_rather_than_going_quiet(self):
+        self.cfg["monthly_lookup_cap"] = 0
+        r = self.agent._find_email({"id": 1, "social_url": None})
+        self.assertIn("used up", r["note"])
+
+    def test_the_paid_lookup_uses_the_cheap_model(self):
+        """Extraction, not reasoning. Opus costs five times the tokens."""
+        self.assertTrue(core.RESEARCH_MODEL.startswith("claude-haiku"))
+        self.assertEqual(core.DEFAULT_CONFIG["research_model"],
+                         core.RESEARCH_MODEL)
+
+    def test_the_search_tool_matches_the_model(self):
+        """The newer variant is a 400 on Haiku, not a graceful fallback."""
+        self.assertEqual(core._web_search_tool_for("claude-haiku-4-5"),
+                         "web_search_20250305")
+        self.assertEqual(core._web_search_tool_for("claude-opus-5"),
+                         "web_search_20260209")
 
 
 class OneSourceDownTest(unittest.TestCase):
@@ -379,3 +431,22 @@ class OneSourceDownTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ZeroMeansZeroTest(unittest.TestCase):
+    """A cap of nought means spend nothing, not "use the default"."""
+
+    def test_a_zero_cap_is_kept(self):
+        self.assertEqual(core.setting_int({"cap": 0}, "cap", 200), 0)
+
+    def test_a_missing_setting_falls_back(self):
+        self.assertEqual(core.setting_int({}, "cap", 200), 200)
+
+    def test_a_blank_setting_falls_back(self):
+        self.assertEqual(core.setting_int({"cap": ""}, "cap", 200), 200)
+
+    def test_nonsense_falls_back_rather_than_crashing(self):
+        self.assertEqual(core.setting_int({"cap": "lots"}, "cap", 200), 200)
+
+    def test_a_real_number_is_used(self):
+        self.assertEqual(core.setting_int({"cap": "50"}, "cap", 200), 50)

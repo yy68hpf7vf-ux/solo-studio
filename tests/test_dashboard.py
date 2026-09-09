@@ -346,3 +346,24 @@ class PhoneGateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+    def test_no_page_opens_a_jinja_comment_by_accident(self):
+        """"{#" starts a comment in Jinja, so CSS like "@media(...){#map ..."
+        breaks the whole page with a 500. It has happened twice."""
+        import dashboard_app as dash
+        for name in dir(dash):
+            value = getattr(dash, name)
+            if isinstance(value, str) and "{% extends" in value:
+                with self.subTest(template=name):
+                    self.assertNotIn("{#", value)
+
+    def test_the_map_page_renders(self):
+        r = self.client.get("/map", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('id="usmap"', r.data.decode())
+
+    def test_the_map_data_has_what_the_page_reads(self):
+        d = self.client.get("/map/data",
+                            environ_base={"REMOTE_ADDR": "127.0.0.1"}).json
+        for key in ("points", "at", "of", "here", "found", "bounds", "working"):
+            self.assertIn(key, d)

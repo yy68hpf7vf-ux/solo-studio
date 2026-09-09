@@ -350,6 +350,16 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.working .spin{animation:none}}
 
+/* Narrowing what you're looking at, with the same three widths the crawler
+   uses. A filter, not a delete — the leads stay. */
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
+.filters .chip{font-size:12.5px;padding:5px 12px;border-radius:999px;
+  border:1px solid var(--line);color:var(--mut);text-decoration:none;
+  background:var(--panel-2)}
+.filters .chip:hover{color:var(--ink);border-color:rgba(244,114,182,.4)}
+.filters .chip.on{background:var(--acc);color:var(--acc-ink);font-weight:600;
+  border-color:transparent}
+
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
   padding:13px 22px;color:var(--ink);
@@ -500,6 +510,7 @@ td a:hover{color:var(--acc)}
     >{{ call_count }}</span>{% endif %}</a>
   <a href="{{ url_for('house_page') }}">Studio</a>
   <a href="{{ url_for('team_page') }}">Team</a>
+  <a href="{{ url_for('crawl_map') }}">Map</a>
   <a href="{{ url_for('activity') }}">Activity</a>
   <a href="{{ url_for('ask_page') }}">Ask</a>
   <a href="{{ url_for('setup') }}">Setup</a>
@@ -1096,6 +1107,125 @@ Lower is not better — it just uses more of your API allowance.</p>
 </div>
 {% endblock %}
 """
+
+MAP_PAGE = """
+{% extends "base" %}{% block body %}
+<style>
+.mapwrap{position:relative;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:10px;overflow:hidden}
+#usmap{display:block;width:100%;height:auto}
+#usmap .grid{stroke:rgba(190,170,255,.10);stroke-width:.5}
+#usmap .frame{fill:none;stroke:rgba(190,170,255,.22);stroke-width:1}
+#usmap .dot{stroke:none}
+#usmap .dot.done{fill:rgba(167,139,250,.55)}
+#usmap .dot.empty{fill:rgba(150,137,171,.35)}
+#usmap .dot.now{fill:var(--acc)}
+#usmap .ping{fill:none;stroke:var(--acc);stroke-width:1.2;opacity:.9}
+#usmap text{font:9px -apple-system,sans-serif;fill:var(--mut)}
+#usmap text.here{fill:var(--ink);font-weight:600;font-size:11px}
+.mapbar{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-bottom:12px}
+.mapbar b{font-size:26px;letter-spacing:-.02em}
+.mapkey{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;
+  color:var(--mut)}
+.mapkey i{display:inline-block;width:9px;height:9px;border-radius:50%;
+  margin-right:5px;vertical-align:-1px;font-style:normal}
+@keyframes ping{0%{r:4;opacity:.9}100%{r:22;opacity:0}}
+#usmap .ping{animation:ping 2.2s ease-out infinite}
+@media (prefers-reduced-motion:reduce){ #usmap .ping{animation:none;opacity:.35}}
+</style>
+<div class="card">
+  <div class="mapbar">
+    <div><b id="m-found">0</b><div class="muted">leads found</div></div>
+    <div><b id="m-cities">0</b><div class="muted">cities swept</div></div>
+    <div style="margin-left:auto;text-align:right">
+      <div id="m-here" style="font-weight:600">—</div>
+      <div class="muted" id="m-progress"></div>
+    </div>
+  </div>
+  <div class="mapwrap">
+    <svg id="usmap" viewBox="0 0 960 560" role="img"
+         aria-label="Where JARVIS has searched"></svg>
+  </div>
+  <div class="mapkey">
+    <span><i style="background:var(--acc)"></i>searching now</span>
+    <span><i style="background:rgba(167,139,250,.55)"></i>swept, leads found</span>
+    <span><i style="background:rgba(150,137,171,.35)"></i>swept, nothing to pitch</span>
+    <span id="m-note"></span>
+  </div>
+  <p class="muted" style="margin-bottom:0">Every dot is a real place JARVIS
+  looked, at the coordinates Google gave for it. Cities he hasn't reached yet
+  aren't drawn, because he hasn't looked them up — the map fills in as he
+  works.</p>
+</div>
+<script>
+(function () {
+  var svg = document.getElementById('usmap');
+  var NS = 'http://www.w3.org/2000/svg';
+  var W = 960, H = 560, PAD = 24;
+
+  function el(name, attrs, text) {
+    var n = document.createElementNS(NS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function draw(d) {
+    var b = d.bounds;
+    svg.textContent = '';
+    /* a plain graticule for orientation - no invented coastline */
+    for (var i = 1; i < 6; i++) {
+      var x = PAD + (W - 2 * PAD) * i / 6;
+      svg.appendChild(el('line', {class: 'grid', x1: x, y1: PAD, x2: x, y2: H - PAD}));
+    }
+    for (var j = 1; j < 4; j++) {
+      var y = PAD + (H - 2 * PAD) * j / 4;
+      svg.appendChild(el('line', {class: 'grid', x1: PAD, y1: y, x2: W - PAD, y2: y}));
+    }
+    svg.appendChild(el('rect', {class: 'frame', x: PAD, y: PAD,
+                                width: W - 2 * PAD, height: H - 2 * PAD, rx: 8}));
+
+    var off = 0;
+    d.points.forEach(function (p) {
+      var fx = (p.lng - b.w) / (b.e - b.w), fy = (b.n - p.lat) / (b.n - b.s);
+      if (fx < 0 || fx > 1 || fy < 0 || fy > 1) { off++; return; }
+      var x = PAD + fx * (W - 2 * PAD), y = PAD + fy * (H - 2 * PAD);
+      var r = p.found ? Math.min(11, 3 + Math.sqrt(p.found)) : 2.5;
+      var cls = p.now ? 'now' : (p.found ? 'done' : 'empty');
+      if (p.now) svg.appendChild(el('circle', {class: 'ping', cx: x, cy: y, r: 4}));
+      var dot = el('circle', {class: 'dot ' + cls, cx: x, cy: y, r: r});
+      dot.appendChild(el('title', {}, p.city + ' — ' +
+        (p.found ? p.found + ' leads' : 'nothing worth pitching')));
+      svg.appendChild(dot);
+      if (p.now || p.found >= 8) {
+        svg.appendChild(el('text', {x: x + r + 4, y: y + 3,
+                                    class: p.now ? 'here' : ''}, p.city));
+      }
+    });
+    document.getElementById('m-note').textContent =
+      off ? off + ' outside the map (Alaska, Hawaii)' : '';
+    document.getElementById('m-found').textContent = d.found.toLocaleString();
+    document.getElementById('m-cities').textContent =
+      d.points.length.toLocaleString();
+    document.getElementById('m-here').textContent =
+      d.working ? (d.here || 'starting up') : 'JARVIS is switched off';
+    document.getElementById('m-progress').textContent =
+      d.of ? 'city ' + d.at + ' of ' + d.of.toLocaleString() : '';
+  }
+
+  function poll() {
+    fetch('/map/data', {cache: 'no-store'})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) draw(d); })
+      .catch(function () {});
+  }
+  poll();
+  setInterval(function () { if (!document.hidden) poll(); }, 5000);
+})();
+</script>
+{% endblock %}
+"""
+
 
 ASK = """
 {% extends "base" %}{% block body %}
@@ -2541,6 +2671,57 @@ def logout():
     return redirect(url_for("login" if CLOUD_MODE else "dashboard"))
 
 
+# The continental United States, as a box to draw inside. Alaska and Hawaii
+# sit outside it and are drawn in an inset rather than stretching the map.
+MAP_W, MAP_E = -125.0, -66.9
+MAP_N, MAP_S = 49.4, 24.4
+
+
+@app.get("/map")
+def crawl_map():
+    return _render(MAP_PAGE)
+
+
+@app.get("/map/data")
+def crawl_map_data():
+    """Every city JARVIS has placed on the map, and what he found there.
+
+    Only cities he has actually looked up appear — the coordinates are
+    Google's, not guesses, so the map fills in as he works rather than
+    pretending to know where everywhere is up front.
+    """
+    db = STATE.db
+    try:
+        cities = json.loads(db.get_kv("crawl_cities") or "[]")
+        at = int(db.get_kv("crawl_city") or 0)
+    except (TypeError, ValueError):
+        cities, at = [], 0
+
+    points, total = [], 0
+    for i, city in enumerate(cities):
+        placed = db.get_kv("geo:" + city.lower().strip())
+        if not placed:
+            continue                      # not reached yet: nothing to draw
+        try:
+            lat, lng = (float(x) for x in placed.split(","))
+        except ValueError:
+            continue
+        try:
+            found = int(db.get_kv("found:" + city.lower().strip()) or 0)
+        except ValueError:
+            found = 0
+        total += found
+        points.append({"city": city, "lat": lat, "lng": lng, "found": found,
+                       "state": city.rsplit(", ", 1)[-1],
+                       "now": i == at, "done": i < at})
+    here = cities[at] if at < len(cities) else ""
+    return {"points": points, "at": at + 1 if cities else 0,
+            "of": len(cities), "here": here, "found": total,
+            "bounds": {"w": MAP_W, "e": MAP_E, "n": MAP_N, "s": MAP_S},
+            "working": bool(STATE.config.get("auto_search_enabled")
+                            and STATE.config.get("autopilot_enabled"))}
+
+
 @app.get("/jarvis")
 def jarvis():
     return JARVIS.replace("PWAMETA_PLACEHOLDER", PWA_META)
@@ -2665,6 +2846,18 @@ Sent today: <b>{{ sent_today }}</b>{% if cap %} of {{ cap }}{% endif %}.
 <span style="color:var(--bad)">Daily limit reached — the rest wait for tomorrow.</span>
 {% endif %}
 </p>
+<div class="filters">
+  <span class="muted">Show:</span>
+  {% for key, label in [('', 'Everyone'), ('none', 'Strict'),
+                        ('broken', 'Normal'), ('weak', 'Wide')] %}
+    <a class="chip {% if only == key %}on{% endif %}"
+       href="{{ url_for('approve_queue') }}{% if key %}?only={{ key }}{% endif %}"
+       >{{ label }}</a>
+  {% endfor %}
+  <span class="muted" style="margin-left:auto">
+    {% for key, n in counts.items() %}{{ n }} {{ reasons.get(key, key) }}{% if not loop.last %} · {% endif %}{% endfor %}
+  </span>
+</div>
 {% if queue %}
 <form method="post" action="{{ url_for('approve_all') }}"
   onsubmit="return confirm('Send {{ remaining }} REAL cold emails now?')">
@@ -2767,15 +2960,29 @@ a quick call) and paste it in.</p>
 @app.get("/approve")
 def approve_queue():
     db = STATE.db
+    # Show only the leads at or above a chosen bar. Same three widths the
+    # crawler uses, applied to what you're looking at rather than what gets
+    # collected — so you can narrow the queue without throwing leads away.
+    want = request.args.get("only", "")
+    keep = core.QUALITY_LEVELS.get(want)
+    leads = db.leads_awaiting_approval()
+    if keep:
+        leads = [l for l in leads if (l["site_status"] or core.SITE_NONE) in keep]
     queue = [{"lead": lead, "rendered": STATE.agent.render_outreach(lead)}
-             for lead in db.leads_awaiting_approval()]
+             for lead in leads]
     cap = int(STATE.config.get("daily_send_cap", 20) or 0)
     sent_today = db.sends_today()
     remaining = len(queue)
     if cap:
         remaining = max(0, min(remaining, cap - sent_today))
+    counts = {}
+    for lead in db.leads_awaiting_approval():
+        key = lead["site_status"] or core.SITE_NONE
+        counts[key] = counts.get(key, 0) + 1
     return _render(APPROVE_PAGE, queue=queue, needs_email=db.leads_needing_email(),
-                   cap=cap, sent_today=sent_today, remaining=remaining)
+                   cap=cap, sent_today=sent_today, remaining=remaining,
+                   only=want if keep else "", counts=counts,
+                   reasons=core.SITE_REASON)
 
 
 @app.post("/action/approve/<int:lead_id>")
@@ -3250,7 +3457,7 @@ def current_findings() -> list[dict]:
             "JARVIS is working through %s" % crawl["city"],
             "City %d of %d — he goes city by city, state by state, on his own "
             "while the app is open." % (crawl["at"], crawl["of"]),
-            "/activity", "Watch"))
+            "/map", "See the map"))
     if not CLOUD_MODE and _restart_pending():
         extra.append(core.finding(
             "restart-pending", core.WATCH, "An update is installed but not running",

@@ -231,6 +231,45 @@ GOOGLE_FREE_CALLS_MONTH = 5000
 GOOGLE_CALL_CAP = 4500
 
 
+# Looking an address up with a model and web search is the priciest thing the
+# app does per lead: $10 per 1,000 searches on top of tokens. Haiku instead of
+# Opus is a fifth the token price, and this is an extraction job, not a
+# reasoning one.
+RESEARCH_MODEL = "claude-haiku-4-5"
+LOOKUP_CAP = 200          # paid lookups a month, before it stops spending
+
+
+def _web_search_tool_for(model: str) -> str:
+    """The web-search tool variant a model actually accepts.
+
+    The newer one needs Opus 4.6+ or Sonnet 4.6+; Haiku takes the basic one,
+    and sending the wrong variant is a 400 rather than a graceful fallback.
+    """
+    modern = ("claude-opus-", "claude-sonnet-5", "claude-sonnet-4-6",
+              "claude-fable-", "claude-mythos-")
+    return ("web_search_20260209" if model.startswith(modern)
+            else "web_search_20250305")
+
+
+def setting_int(cfg: dict, key: str, default: int) -> int:
+    """A whole-number setting, where zero means zero.
+
+    The obvious `cfg.get(k, d) or d` turns a deliberate 0 into the default,
+    which for a spending cap is the opposite of what was asked for.
+    """
+    value = cfg.get(key, default)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _lookup_meter_key() -> str:
+    return "paid_lookups_" + datetime.now(timezone.utc).strftime("%Y-%m")
+
+
 def _google_meter_key() -> str:
     return "google_calls_" + datetime.now(timezone.utc).strftime("%Y-%m")
 
@@ -472,6 +511,9 @@ DEFAULT_CONFIG = {
     "lead_floor": 15,                 # go round the map again below this
     "hunt_interval_hours": 6,         # for the older top-up hunt
     "monthly_google_cap": GOOGLE_CALL_CAP,
+    "research_model": RESEARCH_MODEL,   # extraction, not reasoning
+    "monthly_lookup_cap": LOOKUP_CAP,   # paid address lookups a month
+    "lookup_searches": 2,               # web searches per paid lookup
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
     # 20 searches x 3 pages, twice a day, is ~3,600 Google calls a month —
@@ -1044,6 +1086,55 @@ SITE_WORKERS = 12
 SITE_MAX_BYTES = 200_000
 
 
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# Addresses that belong to the web plumbing rather than to the business.
+EMAIL_JUNK = ("noreply", "no-reply", "donotreply", "sentry.io", "wixpress",
+              "example.com", "@2x", "@sentry", "godaddy", "squarespace",
+              "wordpress", "yourdomain", "domain.com", "email.com",
+              "sentry-next", "@adobe", "core.js", ".png", ".jpg", ".gif",
+              ".webp", ".svg", ".css", "@types")
+
+
+def scrape_email(url: str, timeout: int = SITE_TIMEOUT) -> tuple[str, str]:
+    """Read a contact address straight off a page. Returns (email, url).
+
+    Free — an ordinary web request, no model and no search. Worth trying on
+    every lead before anything that costs money: a working-but-dated site
+    usually has the address right there in the footer, and so do plenty of
+    directory listings.
+    """
+    if not url:
+        return "", ""
+    try:
+        resp = requests.get(
+            url, timeout=timeout, allow_redirects=True, stream=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; SoloStudio/1.0)"})
+    except requests.RequestException:
+        return "", ""
+    try:
+        if resp.status_code >= 400:
+            return "", ""
+        try:
+            body = resp.raw.read(SITE_MAX_BYTES, decode_content=True) or b""
+        except Exception:
+            body = resp.content[:SITE_MAX_BYTES]
+        text = body.decode("utf-8", "ignore")
+    finally:
+        resp.close()
+
+    best = ""
+    for found in EMAIL_RE.findall(text):
+        low = found.lower()
+        if any(bad in low for bad in EMAIL_JUNK) or len(found) > 80:
+            continue
+        # A generic business address beats a named person's.
+        if low.split("@")[0] in ("info", "contact", "hello", "office",
+                                 "sales", "admin", "mail"):
+            return found, resp.url
+        best = best or found
+    return best, (resp.url if best else "")
+
+
 def check_website(url: str, timeout: int = SITE_TIMEOUT) -> tuple[str, str]:
     """Look at a business's website and say what, if anything, is wrong with it.
 
@@ -1175,6 +1266,9 @@ def _osm_row(el: dict) -> dict | None:
     address = ", ".join(x for x in (street, town) if x)
     trade = (tags.get("shop") or tags.get("craft") or tags.get("office")
              or tags.get("amenity") or "")
+    # OpenStreetMap sometimes just has the email in it. That is the cheapest
+    # address there is: no lookup, no model, no search.
+    email = (tags.get("email") or tags.get("contact:email") or "").strip()
     return {
         "place_id": "osm:%s/%s" % (el.get("type"), el.get("id")),
         "name": name,
@@ -1182,6 +1276,9 @@ def _osm_row(el: dict) -> dict | None:
         "phone": (tags.get("phone") or tags.get("contact:phone")
                   or tags.get("contact:mobile") or None),
         "category": trade.replace("_", " ").title() or None,
+        "email": email if EMAIL_RE.fullmatch(email) else None,
+        "email_source": ("https://www.openstreetmap.org/%s/%s"
+                         % (el.get("type"), el.get("id"))) if email else None,
         "social_url": (tags.get("website") or tags.get("contact:website")
                        or tags.get("contact:facebook") or None),
     }
@@ -1295,8 +1392,8 @@ def checkup(db, cfg, key_fields=API_KEYS, extra=(),
             spent: int = None, cap: int = None) -> list[dict]:
     """Everything currently worth telling the owner, worst first."""
     out = []
-    cap = cap or int(cfg.get("monthly_google_cap", GOOGLE_CALL_CAP)
-                     or GOOGLE_CALL_CAP)
+    cap = cap if cap is not None else setting_int(
+        cfg, "monthly_google_cap", GOOGLE_CALL_CAP)
 
     # -- can it work at all -------------------------------------------------
     missing = [name for name, field in key_fields if not cfg.get(field)]
@@ -1626,6 +1723,10 @@ class Services:
                 raise ServiceError(
                     f"Google Places error {resp.status_code}: {resp.text[:300]}")
         return []
+
+    def scrape_email(self, url: str) -> tuple[str, str]:
+        """Read an address off a page. Free; no key, no model, no search."""
+        return scrape_email(url)
 
     # -- Yelp, for coverage Google and OSM both miss -------------------------
 
@@ -2119,7 +2220,10 @@ you do not know instead of inventing a lead, a figure, or a setting."""
         Only ever *suggests* — a human confirms before anything is emailed.
         """
         client = self._get_anthropic()
-        model = self.config.get("anthropic_model") or "claude-opus-5"
+        # Deliberately not the big model. This is an extraction job — read a
+        # page, copy an address — and Haiku costs a fifth of Opus per token.
+        # Web search is billed per search on top, so the cap is low too.
+        model = (self.config.get("research_model") or "").strip() or RESEARCH_MODEL
         who = [f"Business name: {lead['name']}"]
         if lead.get("address"):
             who.append(f"Address: {lead['address']}")
@@ -2150,13 +2254,19 @@ you do not know instead of inventing a lead, a figure, or a setting."""
             "RESULT: none | | <short reason>"
         )
         try:
-            response = client.messages.create(
-                model=model, max_tokens=8000,
-                output_config={"effort": "low"},
-                tools=[{"type": "web_search_20260209", "name": "web_search",
-                        "max_uses": 5}],
-                messages=[{"role": "user", "content": prompt}],
-            )
+            kwargs = {
+                "model": model,
+                "max_tokens": 1500,
+                "tools": [{"type": _web_search_tool_for(model),
+                           "name": "web_search",
+                           "max_uses": max(1, int(
+                               self.config.get("lookup_searches", 2) or 2))}],
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            # effort is an Opus/Sonnet control; Haiku rejects it.
+            if not model.startswith("claude-haiku"):
+                kwargs["output_config"] = {"effort": "low"}
+            response = client.messages.create(**kwargs)
         except Exception as e:
             raise ServiceError(f"Email research failed: {explain(e)}") from e
         if response.stop_reason == "refusal":
@@ -2377,8 +2487,8 @@ class Agent:
         default cap sits under the free allowance, and it is the same counter
         whether the calls came from a hunt, a saved search, or a button.
         """
-        cap = int(self.config.get("monthly_google_cap", GOOGLE_CALL_CAP)
-                  or GOOGLE_CALL_CAP)
+        cap = max(0, setting_int(self.config, "monthly_google_cap",
+                                 GOOGLE_CALL_CAP))
         if self.google_calls_this_month() >= cap:
             raise ServiceError(
                 "That's %d Google searches this month, which is the cap you're "
@@ -2992,6 +3102,8 @@ class Agent:
                 if self.db.add_lead(**lead) is not None:
                     new += 1
             added += new
+            if new:
+                self.db.bump_kv("found:" + town.lower().strip(), new)
             self.db.log(None, "sweep",
                         f"{label} around {town}: {getattr(found, 'seen', 0)} "
                         f"businesses, {len(found)} worth pitching, {new} new.")
@@ -3367,14 +3479,25 @@ class Agent:
         return {"ok": True, "researched": len(leads), "found": found}
 
     def _find_email(self, lead: dict) -> dict:
-        """An address for one lead, from whichever source can actually help.
+        """An address for one lead, cheapest route first.
 
-        Hunter works from a domain, so it only has anything to say about the
-        businesses whose site is dead or parked — for those it is far better
-        than guessing. A business with no website at all has no domain, and
-        goes to Claude's web search, which can read a Facebook page.
+        Order matters more than anything else here. Asking a model with web
+        search costs roughly a nickel to a dime a lead — a few hundred dollars
+        across a full list — and most of those lookups are unnecessary,
+        because the address is sitting on a page we already have the link to.
+        So: read the page (free), then Hunter if there's a domain and a key,
+        and only then spend on a search.
         """
-        domain = _domain_of(lead.get("social_url"))
+        # 1. Free: read it off whatever page we already know about.
+        url = lead.get("social_url")
+        if url:
+            email, source = self.services.scrape_email(url)
+            if email:
+                return {"found": True, "email": email, "source": source,
+                        "note": "read straight off their page"}
+
+        # 2. Cheap and exact, when there's a domain to ask about.
+        domain = _domain_of(url)
         if domain and (self.config.get("hunter_api_key") or "").strip():
             try:
                 found = self.services.hunter_email(domain)
@@ -3382,7 +3505,22 @@ class Agent:
                     return found
             except Exception as e:
                 self.db.log(lead.get("id"), "hunter_failed", explain(e, 200))
+
+        # 3. The one that costs real money. Budgeted, and last.
+        cap = max(0, setting_int(self.config, "monthly_lookup_cap", LOOKUP_CAP))
+        used = self.paid_lookups_this_month()
+        if used >= cap:
+            return {"found": False,
+                    "note": "Paid lookups for this month are used up (%d of %d) "
+                            "— free ones carry on." % (used, cap)}
+        self.db.bump_kv(_lookup_meter_key())
         return self.services.research_email(lead)
+
+    def paid_lookups_this_month(self) -> int:
+        try:
+            return int(self.db.get_kv(_lookup_meter_key()) or 0)
+        except ValueError:
+            return 0
 
     def accept_suggested_email(self, lead_id: int) -> dict:
         """Human accepts the Researcher's suggestion for a lead."""

@@ -123,3 +123,67 @@ class CheckWebsiteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ScrapeEmailTest(unittest.TestCase):
+    """Reading an address off a page, which is the free way to do it."""
+
+    @classmethod
+    def setUpClass(cls):
+        class H(http.server.BaseHTTPRequestHandler):
+            PAGES = {
+                "/footer": "<html><body>Call us or email "
+                           "<a href='mailto:info@joesplumbing.com'>here</a>"
+                           "</body></html>",
+                "/person": "<html><body>Reach ray@raysroofing.com</body></html>",
+                "/both": "<html><body>ray@x.com and info@x.com</body></html>",
+                "/junk": "<html><body>noreply@x.com sentry.io@x.com "
+                         "logo@2x.png</body></html>",
+                "/none": "<html><body>No way to reach us.</body></html>",
+            }
+
+            def do_GET(self):
+                body = self.PAGES.get(self.path, "nothing").encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        cls.base = "http://127.0.0.1:%d" % cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def scrape(self, path):
+        return core.scrape_email(self.base + path, timeout=5)[0]
+
+    def test_it_finds_an_address_in_a_mailto_link(self):
+        self.assertEqual(self.scrape("/footer"), "info@joesplumbing.com")
+
+    def test_it_finds_a_bare_address_in_the_text(self):
+        self.assertEqual(self.scrape("/person"), "ray@raysroofing.com")
+
+    def test_it_prefers_the_business_address_over_a_persons(self):
+        self.assertEqual(self.scrape("/both"), "info@x.com")
+
+    def test_it_ignores_the_plumbing_of_the_web(self):
+        """noreply, error trackers and image filenames are not contacts."""
+        self.assertEqual(self.scrape("/junk"), "")
+
+    def test_a_page_with_no_address_returns_nothing(self):
+        self.assertEqual(self.scrape("/none"), "")
+
+    def test_no_url_costs_nothing_and_returns_nothing(self):
+        self.assertEqual(core.scrape_email(""), ("", ""))
+
+    def test_an_unreachable_site_is_not_an_error(self):
+        self.assertEqual(
+            core.scrape_email("https://nope-solo-studio.invalid", timeout=5),
+            ("", ""))

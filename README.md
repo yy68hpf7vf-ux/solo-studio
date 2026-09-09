@@ -90,6 +90,32 @@ returns a business's *Yelp page*, never its own website, so those leads are
 marked as a directory page only and are a weaker signal than the rest, where
 the real site got checked.
 
+**The live map.** The **Map** page draws every city JARVIS has actually looked
+in, at the coordinates Google gave for it, sized by how many leads he found
+there — with the city he's working on right now pinging. Cities he hasn't
+reached aren't drawn, because he hasn't looked them up yet; the map fills in as
+he works. It refreshes itself every few seconds.
+
+**Filtering what you look at.** The Approve page has the same three widths as a
+filter — Everyone / Strict / Normal / Wide — so you can narrow the queue to
+just the businesses with no website at all, without changing what gets
+collected. It hides, it doesn't delete.
+
+**What the email lookup costs, and why it used to hurt.** Asking a model with
+web search runs about $10 per 1,000 searches on top of tokens; on the big model
+with five searches a lead that is roughly 20 cents each, which is $200 across a
+thousand leads. It now goes cheapest-first:
+
+| | Cost |
+|---|---|
+| OpenStreetMap already had the email | free |
+| Read it off the page we already have the link to | free |
+| **Hunter** *(optional)*, when there's a domain | pennies |
+| A model with web search — small model, two searches, capped | ~3.5¢ |
+
+That last one is capped at 200 paid lookups a month, so the worst the app can
+spend on addresses is about $7. The free routes carry on after the cap.
+
 **Finding the email.** Two ways, picked automatically. Where the business has a
 domain — a dead or parked site — **Hunter** *(optional)* looks up addresses on
 it, which beats guessing. Where there is no website at all there is no domain
