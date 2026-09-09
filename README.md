@@ -91,18 +91,23 @@ marked as a directory page only and are a weaker signal than the rest, where
 the real site got checked.
 
 **The live map.** The **Map** page draws the United States — real state
-outlines from public-domain Census boundary data, embedded in the app so it
-works offline — and puts a dot on every city JARVIS has actually looked in, at
-the coordinates Google gave for it, sized by how many leads he found there. The
-city he's working on right now pings. Cities he hasn't reached aren't drawn,
-because he hasn't looked them up yet; the map fills in as he works, and
-refreshes itself every few seconds. The coastline and the dots share one
-projection, so a city can't land in the wrong state.
+outlines from public-domain Census boundary data — with **all 1,321 cities on
+the route** already plotted, so it shows where he's going as well as where he's
+been. Faint dots are still to come; swept ones grow with the leads found there;
+the city he's on right now pings. It refreshes itself every few seconds, and the
+coastline and the dots share one projection, so a city can't land in the wrong
+state.
 
-**Filtering what you look at.** The Approve page has the same three widths as a
-filter — Everyone / Strict / Normal / Wide — so you can narrow the queue to
-just the businesses with no website at all, without changing what gets
-collected. It hides, it doesn't delete.
+Those coordinates are built into the app, which also means the crawl no longer
+spends a Google lookup per city just to learn where it is — about 1,300 calls
+saved. The handful not in the list are still looked up when he reaches them.
+
+**Filtering what you look at.** The Approve page has two filter rows. **Lead
+quality** is the same three widths the crawler uses — Everyone / Strict /
+Normal / Wide. **Email** splits it into the ones ready to send and the ones
+still needing an address, with counts. They combine, they narrow what's on
+screen, and neither changes what gets collected: filtering hides, it never
+deletes.
 
 **What the email lookup costs, and why it used to hurt.** Asking a model with
 web search runs about $10 per 1,000 searches on top of tokens; on the big model

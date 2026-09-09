@@ -421,11 +421,18 @@ class OneSourceDownTest(unittest.TestCase):
         self.assertEqual(r["added"], 0)
         self.assertTrue(r["notes"])
 
-    def test_the_town_is_only_looked_up_once(self):
+    def test_a_town_we_already_know_is_never_looked_up(self):
         looked = []
         self.svc.places_geocode = lambda area: (looked.append(area), (41.7, -74.3))[1]
+        self.assertIsNotNone(core.city_point("Ellenville, NY"))
         self.agent.town_centre("Ellenville, NY")
-        self.agent.town_centre("Ellenville, NY")
+        self.assertEqual(looked, [], "it ships with the app")
+
+    def test_a_town_we_do_not_know_is_looked_up_once(self):
+        looked = []
+        self.svc.places_geocode = lambda area: (looked.append(area), (41.7, -74.3))[1]
+        self.agent.town_centre("Little Nowhere, NY")
+        self.agent.town_centre("Little Nowhere, NY")
         self.assertEqual(len(looked), 1, "a town does not move")
 
 

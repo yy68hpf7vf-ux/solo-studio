@@ -1148,6 +1148,7 @@ MAP_PAGE = """
 #usmap .dot{stroke:none}
 #usmap .dot.done{fill:rgba(167,139,250,.55)}
 #usmap .dot.empty{fill:rgba(150,137,171,.35)}
+#usmap .dot.queued{fill:rgba(150,137,171,.22)}
 #usmap .dot.now{fill:var(--acc)}
 #usmap .ping{fill:none;stroke:var(--acc);stroke-width:1.2;opacity:.9}
 #usmap text{font:9px -apple-system,sans-serif;fill:var(--mut)}
@@ -1165,7 +1166,7 @@ MAP_PAGE = """
 <div class="card">
   <div class="mapbar">
     <div><b id="m-found">0</b><div class="muted">leads found</div></div>
-    <div><b id="m-cities">0</b><div class="muted">cities swept</div></div>
+    <div><b id="m-cities">0</b><div class="muted" id="m-cities-of">cities swept</div></div>
     <div style="margin-left:auto;text-align:right">
       <div id="m-here" style="font-weight:600">—</div>
       <div class="muted" id="m-progress"></div>
@@ -1180,12 +1181,13 @@ MAP_PAGE = """
     <span><i style="background:var(--acc)"></i>searching now</span>
     <span><i style="background:rgba(167,139,250,.55)"></i>swept, leads found</span>
     <span><i style="background:rgba(150,137,171,.35)"></i>swept, nothing to pitch</span>
+    <span><i style="background:rgba(150,137,171,.22)"></i>still to come</span>
     <span id="m-note"></span>
   </div>
-  <p class="muted" style="margin-bottom:0">Every dot is a real place JARVIS
-  looked, at the coordinates Google gave for it. Cities he hasn't reached yet
-  aren't drawn, because he hasn't looked them up — the map fills in as he
-  works.</p>
+  <p class="muted" style="margin-bottom:0">The whole route, all
+  {{ '{:,}'.format(1321) }} cities, drawn from built-in coordinates — so this
+  is where he is going as well as where he has been. Faint dots are still to
+  come; they fill in and grow as he works.</p>
 </div>
 <script>
 (function () {
@@ -1238,12 +1240,15 @@ MAP_PAGE = """
     d.points.forEach(function (p) {
       if (p.lng < b.w || p.lng > b.e || p.lat < b.s || p.lat > b.n) { off++; return; }
       var x = proj.x(p.lng), y = proj.y(p.lat);
-      var r = p.found ? Math.min(11, 3 + Math.sqrt(p.found)) : 2.5;
-      var cls = p.now ? 'now' : (p.found ? 'done' : 'empty');
+      var r = p.found ? Math.min(11, 3 + Math.sqrt(p.found))
+                      : (p.done ? 2.5 : 1.6);
+      var cls = p.now ? 'now'
+                      : (p.found ? 'done' : (p.done ? 'empty' : 'queued'));
       if (p.now) svg.appendChild(el('circle', {class: 'ping', cx: x, cy: y, r: 4}));
       var dot = el('circle', {class: 'dot ' + cls, cx: x, cy: y, r: r});
       dot.appendChild(el('title', {}, p.city + ' — ' +
-        (p.found ? p.found + ' leads' : 'nothing worth pitching')));
+        (p.found ? p.found + ' leads'
+                 : (p.done ? 'nothing worth pitching' : 'not searched yet'))));
       svg.appendChild(dot);
       if (p.now || p.found >= 8) {
         svg.appendChild(el('text', {x: x + r + 4, y: y + 3,
@@ -1253,8 +1258,10 @@ MAP_PAGE = """
     document.getElementById('m-note').textContent =
       off ? off + ' outside the map (Alaska, Hawaii)' : '';
     document.getElementById('m-found').textContent = d.found.toLocaleString();
-    document.getElementById('m-cities').textContent =
-      d.points.length.toLocaleString();
+    var swept = d.points.filter(function (p) { return p.done; }).length;
+    document.getElementById('m-cities').textContent = swept.toLocaleString();
+    document.getElementById('m-cities-of').textContent =
+      'of ' + d.of.toLocaleString() + ' cities swept';
     document.getElementById('m-here').textContent =
       d.working ? (d.here || 'starting up') : 'JARVIS is switched off';
     document.getElementById('m-progress').textContent =
@@ -2758,20 +2765,23 @@ def crawl_map_data():
 
     points, total = [], 0
     for i, city in enumerate(cities):
-        placed = db.get_kv("geo:" + city.lower().strip())
-        if not placed:
-            continue                      # not reached yet: nothing to draw
+        key = city.lower().strip()
+        point = core.city_point(city)
+        if not point:
+            placed = db.get_kv("geo:" + key)   # looked up when he got there
+            if not placed:
+                continue                       # nowhere to draw it yet
+            try:
+                point = tuple(float(x) for x in placed.split(","))
+            except ValueError:
+                continue
         try:
-            lat, lng = (float(x) for x in placed.split(","))
-        except ValueError:
-            continue
-        try:
-            found = int(db.get_kv("found:" + city.lower().strip()) or 0)
+            found = int(db.get_kv("found:" + key) or 0)
         except ValueError:
             found = 0
         total += found
-        points.append({"city": city, "lat": lat, "lng": lng, "found": found,
-                       "state": city.rsplit(", ", 1)[-1],
+        points.append({"city": city, "lat": point[0], "lng": point[1],
+                       "found": found, "state": city.rsplit(", ", 1)[-1],
                        "now": i == at, "done": i < at})
     here = cities[at] if at < len(cities) else ""
     return {"points": points, "at": at + 1 if cities else 0,
@@ -2907,17 +2917,26 @@ Sent today: <b>{{ sent_today }}</b>{% if cap %} of {{ cap }}{% endif %}.
 {% endif %}
 </p>
 <div class="filters">
-  <span class="muted">Show:</span>
+  <span class="muted">Lead quality:</span>
   {% for key, label in [('', 'Everyone'), ('none', 'Strict'),
                         ('broken', 'Normal'), ('weak', 'Wide')] %}
     <a class="chip {% if only == key %}on{% endif %}"
-       href="{{ url_for('approve_queue') }}{% if key %}?only={{ key }}{% endif %}"
-       >{{ label }}</a>
+       href="{{ filter_url(only=key) }}">{{ label }}</a>
   {% endfor %}
+</div>
+<div class="filters">
+  <span class="muted">Email:</span>
+  <a class="chip {% if not have %}on{% endif %}"
+     href="{{ filter_url(have='') }}">Both ({{ totals.all }})</a>
+  <a class="chip {% if have == 'yes' %}on{% endif %}"
+     href="{{ filter_url(have='yes') }}">Ready to send ({{ totals.ready }})</a>
+  <a class="chip {% if have == 'no' %}on{% endif %}"
+     href="{{ filter_url(have='no') }}">Needs an email ({{ totals.needs }})</a>
   <span class="muted" style="margin-left:auto">
     {% for key, n in counts.items() %}{{ n }} {{ reasons.get(key, key) }}{% if not loop.last %} · {% endif %}{% endfor %}
   </span>
 </div>
+{% if have == 'no' %}{% else %}
 {% if queue %}
 <form method="post" action="{{ url_for('approve_all') }}"
   onsubmit="return confirm('Send {{ remaining }} REAL cold emails now?')">
@@ -2970,8 +2989,9 @@ by themselves.</p></div>
   </div>
 </div>
 {% endfor %}
+{% endif %}
 
-{% if needs_email %}
+{% if needs_email and have != 'yes' %}
 <div class="card">
 <h2>Need an email address ({{ needs_email|length }})</h2>
 <p class="muted">Google doesn't publish business emails. The Researcher hunts
@@ -3020,29 +3040,47 @@ a quick call) and paste it in.</p>
 @app.get("/approve")
 def approve_queue():
     db = STATE.db
-    # Show only the leads at or above a chosen bar. Same three widths the
-    # crawler uses, applied to what you're looking at rather than what gets
-    # collected — so you can narrow the queue without throwing leads away.
+    # Two filters over the same page: how good a lead has to be, and whether
+    # it has an address yet. Both narrow what you're looking at — neither
+    # changes what gets collected, and nothing is thrown away.
     want = request.args.get("only", "")
+    have = request.args.get("have", "")
     keep = core.QUALITY_LEVELS.get(want)
-    leads = db.leads_awaiting_approval()
-    if keep:
-        leads = [l for l in leads if (l["site_status"] or core.SITE_NONE) in keep]
-    queue = [{"lead": lead, "rendered": STATE.agent.render_outreach(lead)}
-             for lead in leads]
+
+    def by_quality(rows):
+        if not keep:
+            return list(rows)
+        return [r for r in rows
+                if (r["site_status"] or core.SITE_NONE) in keep]
+
+    ready = by_quality(db.leads_awaiting_approval())
+    unemailed = by_quality(db.leads_needing_email())
+    queue = ([] if have == "no"
+             else [{"lead": lead, "rendered": STATE.agent.render_outreach(lead)}
+                   for lead in ready])
     cap = int(STATE.config.get("daily_send_cap", 20) or 0)
     sent_today = db.sends_today()
     remaining = len(queue)
     if cap:
         remaining = max(0, min(remaining, cap - sent_today))
     counts = {}
-    for lead in db.leads_awaiting_approval():
+    for lead in ready:
         key = lead["site_status"] or core.SITE_NONE
         counts[key] = counts.get(key, 0) + 1
-    return _render(APPROVE_PAGE, queue=queue, needs_email=db.leads_needing_email(),
+
+    def filter_url(only=None, have=None):
+        args = {"only": want if only is None else only,
+                "have": (request.args.get("have", "") if have is None else have)}
+        args = {k: v for k, v in args.items() if v}
+        return url_for("approve_queue", **args)
+
+    return _render(APPROVE_PAGE, queue=queue,
+                   needs_email=[] if have == "yes" else unemailed,
                    cap=cap, sent_today=sent_today, remaining=remaining,
-                   only=want if keep else "", counts=counts,
-                   reasons=core.SITE_REASON)
+                   only=want if keep else "", have=have, counts=counts,
+                   reasons=core.SITE_REASON, filter_url=filter_url,
+                   totals={"all": len(ready) + len(unemailed),
+                           "ready": len(ready), "needs": len(unemailed)})
 
 
 @app.post("/action/approve/<int:lead_id>")

@@ -466,16 +466,32 @@ class CrawlTest(unittest.TestCase):
         self.assertFalse(set(seen) & set(self.swept), "it must not start over")
 
     def test_a_city_it_cannot_place_is_skipped_not_fatal(self):
+        """A town nobody has heard of: not in the built-in list, and the
+        lookup comes back empty."""
+        self.cfg["territory_base"] = "Nowheresville, ZZ"
+        self.agent.services.towns_near = lambda base, miles: []
         self.agent.services.places_geocode = lambda area: None
         r = self.agent.crawl()
-        self.assertEqual(r["added"], 0)
+        # It steps over the one it can't place and carries on with the next,
+        # rather than stalling on it.
         self.assertGreater(int(self.agent.db.get_kv("crawl_city")), 0)
+        self.assertTrue(self.swept, "an unplaceable city must not stop the crawl")
+        self.assertNotIn("Nowheresville, ZZ",
+                         [label for label, _, _ in self.swept])
 
-    def test_a_city_is_only_placed_on_the_map_once(self):
+    def test_a_known_city_costs_no_lookup_at_all(self):
+        """1,321 of them ship with the app, so the crawl doesn't buy a Google
+        call just to learn where El Paso is."""
         self.cfg["tiles_per_tick"] = 4
         self.agent.crawl()
         self.agent.crawl()
-        self.assertEqual(self.placed.count("El Paso, TX"), 1)
+        self.assertEqual(self.placed, [])
+
+    def test_an_unknown_town_is_still_looked_up_once(self):
+        self.assertIsNone(self.core.city_point("Napanoch, NY"))
+        self.agent.town_centre("Napanoch, NY")
+        self.agent.town_centre("Napanoch, NY")
+        self.assertEqual(self.placed.count("Napanoch, NY"), 1)
 
     def test_a_failing_spot_does_not_stop_the_crawl(self):
         calls = []

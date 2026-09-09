@@ -326,3 +326,75 @@ class BudgetStaysFreeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ApproveFiltersTest(unittest.TestCase):
+    """Two filters over one page: how good the lead is, and whether it has an
+    address yet. Both narrow the view; neither throws anything away."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-filters-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import dashboard_app as dash
+        import solo_studio_agent as core
+        self.dash, self.core = dash, core
+        dash.STATE.reload()
+        db = dash.STATE.db
+        # ready to send, no website at all
+        db.add_lead(place_id="a", name="Blank Co", address="a", phone="p",
+                    category="c", email="a@b.com", site_status="none")
+        # ready to send, only a dead site
+        db.add_lead(place_id="b", name="Dead Co", address="a", phone="p",
+                    category="c", email="b@b.com", site_status="dead")
+        # no address yet
+        db.add_lead(place_id="c", name="Nameless Co", address="a", phone="p",
+                    category="c", site_status="none")
+        self.client = dash.app.test_client()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def page(self, query=""):
+        return self.client.get("/approve" + query,
+                               environ_base={"REMOTE_ADDR": "127.0.0.1"}
+                               ).data.decode()
+
+    def test_everything_shows_by_default(self):
+        html = self.page()
+        for name in ("Blank Co", "Dead Co", "Nameless Co"):
+            self.assertIn(name, html)
+
+    def test_needs_an_email_hides_the_ones_ready_to_send(self):
+        html = self.page("?have=no")
+        self.assertIn("Nameless Co", html)
+        self.assertNotIn("Blank Co", html)
+
+    def test_ready_to_send_hides_the_ones_without_an_address(self):
+        html = self.page("?have=yes")
+        self.assertIn("Blank Co", html)
+        self.assertNotIn("Nameless Co", html)
+
+    def test_strict_hides_the_ones_that_merely_have_a_broken_site(self):
+        html = self.page("?only=none")
+        self.assertIn("Blank Co", html)
+        self.assertNotIn("Dead Co", html)
+
+    def test_the_two_filters_work_together(self):
+        html = self.page("?only=none&have=no")
+        self.assertIn("Nameless Co", html)
+        self.assertNotIn("Blank Co", html)
+        self.assertNotIn("Dead Co", html)
+
+    def test_the_counts_are_real(self):
+        html = self.page()
+        self.assertIn("Ready to send (2)", html)
+        self.assertIn("Needs an email (1)", html)
+
+    def test_filtering_never_deletes_anything(self):
+        """A filter hides; it must not remove. Counted as a difference, since
+        the shared database may hold rows from elsewhere in the suite."""
+        before = len(self.dash.STATE.db.all_leads())
+        self.page("?have=no")
+        self.page("?only=none&have=yes")
+        self.assertEqual(len(self.dash.STATE.db.all_leads()), before)
