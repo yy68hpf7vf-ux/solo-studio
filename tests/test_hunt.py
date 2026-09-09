@@ -621,3 +621,72 @@ class NothingToClickTest(unittest.TestCase):
         import dashboard_app as dash
         src = inspect.getsource(dash._autopilot_loop)
         self.assertNotIn('cfg.get("inkbox_api_key")', src)
+
+
+class PacingTest(unittest.TestCase):
+    """Never stopping matters more than going fast.
+
+    At a few spots a minute the month's free Google allowance is gone in a day
+    and the crawl then sits still for four weeks — which reads exactly like the
+    app being broken. Pacing it means he is always working.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-pace-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import solo_studio_agent as core
+        self.core = core
+        self.cfg = dict(core.DEFAULT_CONFIG, google_places_api_key="k",
+                        auto_search_enabled=True, territory_base="El Paso, TX")
+        self.agent = core.Agent(core.Database(), core.Services(self.cfg),
+                                self.cfg)
+        self.swept = []
+        self.agent.sweep_point = lambda label, lat, lng, radius=0: (
+            self.swept.append(label), {"added": 1, "seen": 5})[1]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def spent(self, n):
+        self.agent.db.set_kv(self.core._google_meter_key(), str(n))
+
+    def test_a_fresh_app_gets_going_straight_away(self):
+        """A burst, so the first few minutes show something."""
+        self.assertGreater(self.agent.crawl_allowance(), 0)
+        self.agent.crawl()
+        self.assertTrue(self.swept)
+
+    def test_it_holds_back_once_it_is_ahead_of_the_month(self):
+        self.spent(self.core.GOOGLE_CALL_CAP)
+        self.assertEqual(self.agent.crawl_allowance(), 0)
+        r = self.agent.crawl()
+        self.assertIn("pacing", r["skipped"])
+        self.assertEqual(self.swept, [])
+
+    def test_it_never_lets_you_newly_exceed_the_cap(self):
+        cap = self.core.GOOGLE_CALL_CAP
+        for spent in (0, 100, 1000, 4400, 4500, 9000):
+            with self.subTest(spent=spent):
+                self.spent(spent)
+                allowed = self.agent.crawl_allowance()
+                self.assertLessEqual(spent + allowed, max(cap, spent))
+
+    def test_already_over_the_cap_means_nothing_more(self):
+        self.spent(self.core.GOOGLE_CALL_CAP * 2)
+        self.assertEqual(self.agent.crawl_allowance(), 0)
+
+    def test_a_zero_cap_means_no_crawling(self):
+        self.cfg["monthly_google_cap"] = 0
+        self.assertEqual(self.agent.crawl_allowance(), 0)
+
+    def test_a_much_bigger_cap_lets_him_work_harder(self):
+        """Raising it a little does not unlock spending you are already ahead
+        of — the pacing line has to catch up first, which is the point."""
+        self.spent(self.core.GOOGLE_CALL_CAP)
+        self.cfg["monthly_google_cap"] = self.core.GOOGLE_CALL_CAP * 10
+        self.assertGreater(self.agent.crawl_allowance(), 0)
+
+    def test_the_lead_target_no_longer_stops_him(self):
+        """Stopping at a round number just meant stopping."""
+        self.assertGreaterEqual(self.core.DEFAULT_CONFIG["lead_target"], 100000)

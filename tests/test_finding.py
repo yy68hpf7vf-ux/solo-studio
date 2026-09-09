@@ -68,62 +68,43 @@ class WhatCountsAsNoWebsiteTest(unittest.TestCase):
                 mock.patch.object(self.core, "check_website", fake_check):
             return self.svc.places_search_no_website("roofers in Atlanta, GA")
 
-    def test_a_working_modern_website_is_still_a_disqualifier(self):
+    def test_a_working_website_disqualifies_them(self):
         got = self._search([place("Big Roofing", "https://bigroofing.com")])
         self.assertEqual(len(got), 0)
         self.assertEqual(got.with_site, 1)
 
-    def test_a_website_that_does_not_load_is_a_lead(self):
-        """The best lead of the lot: they paid for a site and it's gone."""
+    def test_no_website_at_all_is_the_lead(self):
+        got = self._search([place("Blank Co")])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["site_status"], self.core.SITE_NONE)
+
+    def test_a_facebook_page_counts_as_no_website(self):
+        """There is nowhere of their own to send a customer, which is the
+        pitch — and somebody there already tried, which makes it warmer than
+        a blank listing."""
+        got = self._search([place("Joe Roofs", "https://facebook.com/joeroofs")])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["site_status"], self.core.SITE_SOCIAL)
+
+    def test_a_site_that_merely_does_not_load_is_no_longer_a_lead(self):
+        """They have a website. It is a bad one, which is a different and
+        weaker conversation — the widths that covered it were taken out."""
         got = self._search(
             [place("Gone Roofing", "https://goneroofing.com")],
             {"https://goneroofing.com": (self.core.SITE_DEAD, "HTTP 404")})
-        self.assertEqual(len(got), 1)
-        self.assertEqual(got[0]["site_status"], self.core.SITE_DEAD)
-        self.assertEqual(got[0]["site_note"], "HTTP 404")
-
-    def test_a_parked_domain_is_a_lead(self):
-        got = self._search(
-            [place("Parked Co", "https://parked.com")],
-            {"https://parked.com": (self.core.SITE_PARKED, "coming soon")})
-        self.assertEqual(len(got), 1)
-
-    def test_the_net_can_be_narrowed_back_to_no_website_at_all(self):
-        self.svc.config["lead_quality"] = "none"
-        got = self._search(
-            [place("Gone", "https://gone.com"), place("Nothing")],
-            {"https://gone.com": (self.core.SITE_DEAD, "timeout")})
-        self.assertEqual(len(got), 1)
-        self.assertEqual(got[0]["name"], "Nothing")
-
-    def test_the_net_can_be_widened_to_weak_sites(self):
-        self.svc.config["lead_quality"] = "weak"
-        got = self._search(
-            [place("Old Co", "http://oldco.com")],
-            {"http://oldco.com": (self.core.SITE_INSECURE, "http://oldco.com")})
-        self.assertEqual(len(got), 1)
-        self.assertEqual(got[0]["site_status"], self.core.SITE_INSECURE)
-
-    def test_a_weak_site_is_not_a_lead_at_the_default_setting(self):
-        got = self._search(
-            [place("Old Co", "http://oldco.com")],
-            {"http://oldco.com": (self.core.SITE_INSECURE, "x")})
         self.assertEqual(len(got), 0)
 
-    def test_a_facebook_page_is_a_lead(self):
-        got = self._search([place("Joe Roofs", "https://facebook.com/joeroofs")])
-        self.assertEqual(len(got), 1)
-        self.assertEqual(got.social_only, 1)
-        self.assertEqual(got[0]["social_url"], "https://facebook.com/joeroofs")
+    def test_nor_is_a_parked_domain_or_an_old_site(self):
+        for status in (self.core.SITE_PARKED, self.core.SITE_INSECURE,
+                       self.core.SITE_NOT_MOBILE):
+            with self.subTest(status=status):
+                got = self._search([place("Co", "https://co.com")],
+                                   {"https://co.com": (status, "x")})
+                self.assertEqual(len(got), 0)
 
-    def test_the_dead_google_business_site_builder_is_a_lead(self):
-        got = self._search([place("Ann Roofs", "https://annroofs.business.site")])
-        self.assertEqual(len(got), 1)
-
-    def test_a_business_on_a_dot_site_domain_is_not_mistaken_for_one(self):
-        """joes-business.site is a real domain; joe.business.site is not."""
-        got = self._search([place("Joe", "https://joes-business.site")])
-        self.assertEqual(len(got), 0)
+    def test_there_is_only_one_bar_now(self):
+        self.assertEqual(set(self.core.LEAD_STATUSES),
+                         {self.core.SITE_NONE, self.core.SITE_SOCIAL})
 
     def test_closed_businesses_are_left_alone(self):
         got = self._search([place("Gone", None, "CLOSED_PERMANENTLY")])
@@ -375,17 +356,6 @@ class ApproveFiltersTest(unittest.TestCase):
         self.assertIn("Blank Co", html)
         self.assertNotIn("Nameless Co", html)
 
-    def test_strict_hides_the_ones_that_merely_have_a_broken_site(self):
-        html = self.page("?only=none")
-        self.assertIn("Blank Co", html)
-        self.assertNotIn("Dead Co", html)
-
-    def test_the_two_filters_work_together(self):
-        html = self.page("?only=none&have=no")
-        self.assertIn("Nameless Co", html)
-        self.assertNotIn("Blank Co", html)
-        self.assertNotIn("Dead Co", html)
-
     def test_the_counts_are_real(self):
         html = self.page()
         self.assertIn("Ready to send (2)", html)
@@ -396,7 +366,7 @@ class ApproveFiltersTest(unittest.TestCase):
         the shared database may hold rows from elsewhere in the suite."""
         before = len(self.dash.STATE.db.all_leads())
         self.page("?have=no")
-        self.page("?only=none&have=yes")
+        self.page("?have=yes")
         self.assertEqual(len(self.dash.STATE.db.all_leads()), before)
 
 

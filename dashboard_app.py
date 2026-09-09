@@ -973,21 +973,6 @@ spots every couple of minutes, no typing — until he has this many waiting.
 Then he stops, because sweeping the same ground twice finds nothing and still
 costs a search. He starts again if the pile runs down.</p>
 
-<label>How wide to cast the net</label>
-<select name="lead_quality">
-  <option value="none" {% if config.lead_quality == 'none' %}selected{% endif %}>
-    Strict — only businesses with no website at all</option>
-  <option value="broken" {% if config.lead_quality in (None, '', 'broken') %}selected{% endif %}>
-    Normal — also dead links, parked domains and social-only pages</option>
-  <option value="weak" {% if config.lead_quality == 'weak' %}selected{% endif %}>
-    Wide — also sites that are http-only or unusable on a phone</option>
-</select>
-<p class="muted">JARVIS opens every website Google lists and looks at it. A
-dead link or a parked domain is a better lead than a blank listing — they
-already paid for a site once. Costs nothing: these are ordinary web requests,
-not Google searches. A site that loads, works and is built for phones is never
-a lead at any setting.</p>
-
 <label><input type="checkbox" name="auto_research_enabled" value="1"
   {% if config.auto_research_enabled %}checked{% endif %}
   style="width:auto;margin-right:8px">Let the Researcher hunt missing emails</label>
@@ -2940,14 +2925,6 @@ Sent today: <b>{{ sent_today }}</b>{% if cap %} of {{ cap }}{% endif %}.
 {% endif %}
 </p>
 <div class="filters">
-  <span class="muted">Lead quality:</span>
-  {% for key, label in [('', 'Everyone'), ('none', 'Strict'),
-                        ('broken', 'Normal'), ('weak', 'Wide')] %}
-    <a class="chip {% if only == key %}on{% endif %}"
-       href="{{ filter_url(only=key) }}">{{ label }}</a>
-  {% endfor %}
-</div>
-<div class="filters">
   <span class="muted">Email:</span>
   <a class="chip {% if not have %}on{% endif %}"
      href="{{ filter_url(have='') }}">Both ({{ totals.all }})</a>
@@ -3066,18 +3043,9 @@ def approve_queue():
     # Two filters over the same page: how good a lead has to be, and whether
     # it has an address yet. Both narrow what you're looking at — neither
     # changes what gets collected, and nothing is thrown away.
-    want = request.args.get("only", "")
     have = request.args.get("have", "")
-    keep = core.QUALITY_LEVELS.get(want)
-
-    def by_quality(rows):
-        if not keep:
-            return list(rows)
-        return [r for r in rows
-                if (r["site_status"] or core.SITE_NONE) in keep]
-
-    ready = by_quality(db.leads_awaiting_approval())
-    unemailed = by_quality(db.leads_needing_email())
+    ready = db.leads_awaiting_approval()
+    unemailed = db.leads_needing_email()
     queue = ([] if have == "no"
              else [{"lead": lead, "rendered": STATE.agent.render_outreach(lead)}
                    for lead in ready])
@@ -3091,16 +3059,14 @@ def approve_queue():
         key = lead["site_status"] or core.SITE_NONE
         counts[key] = counts.get(key, 0) + 1
 
-    def filter_url(only=None, have=None):
-        args = {"only": want if only is None else only,
-                "have": (request.args.get("have", "") if have is None else have)}
-        args = {k: v for k, v in args.items() if v}
-        return url_for("approve_queue", **args)
+    def filter_url(have=None):
+        args = {"have": (request.args.get("have", "") if have is None else have)}
+        return url_for("approve_queue", **{k: v for k, v in args.items() if v})
 
     return _render(APPROVE_PAGE, queue=queue,
                    needs_email=[] if have == "yes" else unemailed,
                    cap=cap, sent_today=sent_today, remaining=remaining,
-                   only=want if keep else "", have=have, counts=counts,
+                   have=have, counts=counts,
                    reasons=core.SITE_REASON, filter_url=filter_url,
                    totals={"all": len(ready) + len(unemailed),
                            "ready": len(ready), "needs": len(unemailed)})
@@ -4252,9 +4218,6 @@ def setup():
                 pass
         cfg["auto_search_enabled"] = bool(request.form.get("auto_search_enabled"))
         cfg["auto_research_enabled"] = bool(request.form.get("auto_research_enabled"))
-        quality = request.form.get("lead_quality", "")
-        if quality in core.QUALITY_LEVELS:
-            cfg["lead_quality"] = quality
         level = request.form.get("spend_level", "")
         if level in core.SPEND_LEVELS:
             cfg["spend_level"] = level

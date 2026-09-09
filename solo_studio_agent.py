@@ -25,6 +25,7 @@ page) — no environment variables, no editing code.
 from __future__ import annotations
 
 import io
+import calendar
 import json
 import math
 import os
@@ -229,6 +230,9 @@ def line_for_today(today: date | None = None) -> dict:
 # The cap sits under the free line on purpose.
 GOOGLE_FREE_CALLS_MONTH = 5000
 GOOGLE_CALL_CAP = 4500
+# How far ahead of the straight line the crawl may run, so a fresh app finds
+# something in the first few minutes rather than trickling from day one.
+CRAWL_BURST = 250
 
 
 # Looking an address up with a model and web search is the priciest thing the
@@ -557,13 +561,12 @@ DEFAULT_CONFIG = {
     # email itself is still read and approved by a person, with that address
     # shown, so a wrong one is caught before anything leaves.
     "auto_accept_emails": True,
-    # How wide to cast the net: "none" only takes businesses with no website
-    # at all, "broken" adds dead links, parked domains and social-only pages,
-    # "weak" adds sites that are http-only or unusable on a phone.
-    "lead_quality": "broken",
     # How many uncontacted leads to bank before the crawl rests. It sweeps the
     # map on its own until it gets there — no typing, no buttons.
-    "lead_target": 1000,
+    # No practical ceiling on leads: he keeps going until the map is covered.
+    # The guard on spending is the Google meter, not a lead count — stopping at
+    # a round number just meant stopping.
+    "lead_target": 1000000,
     "tiles_per_tick": 3,              # spots on the map swept each round
     "lead_floor": 15,                 # go round the map again below this
     "hunt_interval_hours": 6,         # for the older top-up hunt
@@ -1124,13 +1127,16 @@ SITE_REASON = {
     SITE_NOT_MOBILE: "their site isn't built for phones",
 }
 
-# How wide to cast the net, in order. Each level adds to the one before it.
-QUALITY_LEVELS = {
-    "none": (SITE_NONE,),
-    "broken": (SITE_NONE, SITE_SOCIAL, SITE_DEAD, SITE_PARKED),
-    "weak": (SITE_NONE, SITE_SOCIAL, SITE_DEAD, SITE_PARKED,
-             SITE_INSECURE, SITE_NOT_MOBILE),
-}
+# What counts as a lead: a business with no website of its own. Nothing else.
+#
+# There used to be three widths — also dead links, also parked domains, also
+# http-only sites — and they are gone. Those businesses do have a website; it
+# is just a bad one, which is a different conversation and a weaker one.
+#
+# A Facebook or Yelp page counts as no website, because it is: there is
+# nowhere of their own to send a customer, and "you haven't got a website" is
+# true, easy to say, and impossible to argue with. That is the whole pitch.
+LEAD_STATUSES = (SITE_NONE, SITE_SOCIAL)
 
 # Markers of a page that exists but says nothing. Kept narrow on purpose: a
 # false positive here means pitching someone who has a perfectly good site.
@@ -1736,8 +1742,7 @@ class Services:
         — comes through here, so a lead means the same thing whichever index
         it was found in.
         """
-        keep = QUALITY_LEVELS.get(
-            self.config.get("lead_quality", "broken"), QUALITY_LEVELS["broken"])
+        keep = LEAD_STATUSES
         wanted, dropped = [], 0
         for lead in raw:
             if is_a_business(lead.get("name"), lead.get("category")):
@@ -3319,6 +3324,26 @@ class Agent:
         except (TypeError, ValueError):
             return 0
 
+    def crawl_allowance(self) -> int:
+        """How many more Google calls the crawl may make right now.
+
+        Sprinting is the problem, not the total. At a few spots every minute
+        the whole month's free allowance goes in a day, and then he stops for
+        four weeks — which reads exactly like the app breaking. So the budget
+        is paced across the month: he may always be a couple of hundred calls
+        ahead of the straight line, and never more.
+        """
+        cap = max(0, setting_int(self.config, "monthly_google_cap",
+                                 GOOGLE_CALL_CAP))
+        if not cap:
+            return 0
+        now = datetime.now(timezone.utc)
+        days = calendar.monthrange(now.year, now.month)[1]
+        # how far through the month we are, counting the day in progress
+        through = ((now.day - 1) + now.hour / 24.0) / days
+        earned = cap * through + CRAWL_BURST
+        return max(0, int(min(cap, earned) - self.google_calls_this_month()))
+
     def crawl(self) -> dict:
         """Work across the country on its own, a few spots each round.
 
@@ -3341,7 +3366,10 @@ class Agent:
 
         city_i = self._kv_int("crawl_city") % len(cities)
         tile_i = self._kv_int("crawl_tile")
-        per_tick = max(1, int(cfg.get("tiles_per_tick", 3) or 3))
+        allowance = self.crawl_allowance()
+        if allowance <= 0:
+            return {"skipped": "pacing the month's free searches — back shortly"}
+        per_tick = min(max(1, setting_int(cfg, "tiles_per_tick", 3)), allowance)
         added = 0
         swept = 0
         city = cities[city_i]
@@ -3585,6 +3613,11 @@ class Agent:
                 self.db.log(lead["id"], "research_failed", explain(e, 300))
                 self.db.update_lead(lead["id"], researched_at=_now())
                 continue
+            if result.get("later"):
+                # Held back by a budget, not answered. Marking it researched
+                # would retire the lead for good over a cap that clears
+                # tomorrow — which is how the researching quietly stopped.
+                continue
             self.db.update_lead(lead["id"], researched_at=_now())
             if result.get("found"):
                 self.db.update_lead(
@@ -3648,7 +3681,7 @@ class Agent:
         month_cap = plan["lookups_month"]
         used = self.paid_lookups_this_month()
         if used >= month_cap:
-            return {"found": False,
+            return {"found": False, "later": True,
                     "note": "Paid lookups for this month are used up (%d of %d) "
                             "— free ones carry on." % (used, month_cap)}
         # A daily cap as well, or a month's budget goes in the first hour: the
@@ -3657,7 +3690,7 @@ class Agent:
             or plan["lookups_day"]
         today = self.paid_lookups_today()
         if day_cap and today >= day_cap:
-            return {"found": False,
+            return {"found": False, "later": True,
                     "note": "That's today's %d paid lookups — it picks up "
                             "again tomorrow, and the free ones carry on."
                             % day_cap}

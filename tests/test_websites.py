@@ -115,10 +115,16 @@ class CheckWebsiteTest(unittest.TestCase):
             with self.subTest(status=status):
                 self.assertTrue(core.SITE_REASON.get(status))
 
-    def test_a_working_site_is_never_a_lead_at_any_setting(self):
-        """Widening the net must never reach someone with a good site."""
-        for level in core.QUALITY_LEVELS.values():
-            self.assertNotIn(core.SITE_OK, level)
+    def test_a_working_site_is_never_a_lead(self):
+        self.assertNotIn(core.SITE_OK, core.LEAD_STATUSES)
+
+    def test_nor_is_a_site_that_merely_needs_replacing(self):
+        """Only businesses with no website of their own. A dead or dated site
+        is still a site, and a weaker conversation."""
+        for status in (core.SITE_DEAD, core.SITE_PARKED, core.SITE_INSECURE,
+                       core.SITE_NOT_MOBILE):
+            with self.subTest(status=status):
+                self.assertNotIn(status, core.LEAD_STATUSES)
 
 
 if __name__ == "__main__":

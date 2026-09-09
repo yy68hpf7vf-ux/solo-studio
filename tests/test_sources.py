@@ -548,3 +548,54 @@ class SpendDialTest(unittest.TestCase):
         import inspect
         src = inspect.getsource(core.Services.classify_reply)
         self.assertIn("max_tokens=200", src)
+
+
+class NeverStopsResearchingTest(unittest.TestCase):
+    """A budget holding a lookup back is not the same as having answered it.
+
+    Marking the lead researched anyway retired it for good over a cap that
+    clears tomorrow — which is how the researching quietly stopped.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-retry-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        self.cfg = dict(core.DEFAULT_CONFIG, anthropic_api_key="k",
+                        spend_level="off")     # every paid lookup refused
+        self.svc = core.Services(self.cfg)
+        self.agent = core.Agent(core.Database(), self.svc, self.cfg)
+        self.svc.scrape_email = lambda url: ("", "")
+        self.svc.research_email = lambda lead: {"found": True,
+                                                "email": "a@b.com",
+                                                "source": "s", "note": "n"}
+        self.lead = self.agent.db.add_lead(place_id="p", name="Biz",
+                                           address="a", phone="p", category="c")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def test_a_capped_lead_is_not_retired(self):
+        self.agent.research_missing_emails(force=True)
+        self.assertIsNone(self.agent.db.get_lead(self.lead)["researched_at"])
+
+    def test_and_it_is_picked_up_once_the_budget_is_back(self):
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(len(self.agent.db.leads_to_research(5)), 1)
+        self.cfg["spend_level"] = "normal"
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(self.agent.db.get_lead(self.lead)["email"], "a@b.com")
+
+    def test_a_lead_that_was_answered_is_retired(self):
+        """Not-found is an answer; it must not be asked forever."""
+        self.cfg["spend_level"] = "normal"
+        self.svc.research_email = lambda lead: {"found": False, "note": "none"}
+        self.agent.research_missing_emails(force=True)
+        self.assertIsNotNone(self.agent.db.get_lead(self.lead)["researched_at"])
+
+    def test_the_free_routes_never_stop_whatever_the_budget(self):
+        self.svc.scrape_email = lambda url: ("info@x.com", url)
+        self.agent.db.update_lead(self.lead, social_url="https://x.com")
+        self.agent.research_missing_emails(force=True)
+        self.assertEqual(self.agent.db.get_lead(self.lead)["email"],
+                         "info@x.com")

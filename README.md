@@ -102,11 +102,9 @@ Those coordinates are built into the app, which also means the crawl no longer
 spends a Google lookup per city just to learn where it is — about 1,300 calls
 saved. The handful not in the list are still looked up when he reaches them.
 
-**Filtering what you look at.** The Approve page has two filter rows. **Lead
-quality** is the same three widths the crawler uses — Everyone / Strict /
-Normal / Wide. **Email** splits it into the ones ready to send and the ones
-still needing an address, with counts. They combine, they narrow what's on
-screen, and neither changes what gets collected: filtering hides, it never
+**Filtering what you look at.** The Approve page splits the queue into the ones
+ready to send and the ones still needing an address, with counts. It narrows
+what's on screen and never changes what's collected: filtering hides, it never
 deletes.
 
 **What the email lookup costs, and why it used to hurt.** Asking a model with
@@ -163,9 +161,16 @@ across it, and moves to the next.
 The grid matters: Google returns the twenty businesses nearest a point and
 nothing more, so one point per city would be one street corner per city.
 
-He stops when he has enough banked (1,000 by default, on Setup) and starts
-again if the pile runs down. Progress is saved, so closing the app and opening
-it tomorrow carries on from the same city rather than starting over.
+He doesn't stop. There's no lead ceiling any more — stopping at a round number
+just meant stopping — and progress is saved, so closing the app and opening it
+tomorrow carries on from the same city.
+
+What he does do is **pace himself**. Google gives 5,000 searches a month free;
+at a few spots a minute the whole allowance would go in a day and then he'd sit
+still for four weeks, which reads exactly like the app being broken. So the
+budget is spread across the month, with a burst at the start so a fresh install
+finds something in the first few minutes. He is always working, and never
+charges you.
 
 **No home town needed.** If you haven't set one he takes it from the postal
 address you already gave for the emails. If there's no address either, he
@@ -202,22 +207,15 @@ decisions.
 you, crawl if there's map left, look up missing addresses.
 
 **JARVIS opens the websites.** Google only tells you whether a business has a
-link. Plenty of those links are dead, parked, or a Facebook page. So he fetches
-each one and looks: does it load, is there anything on it, is it https, is it
-built for phones. Checking costs nothing — these are ordinary web requests, not
-billable searches — and it is the difference between "they all have websites,
-sorry" and a list of people with a specific, true reason to call them.
+link. Plenty of those links are dead, or a Facebook page. So he fetches each
+one and looks — and keeps the business only if it has **no website of its
+own**. Checking costs nothing: ordinary web requests, not billable searches.
 
-Three settings, on Setup:
-
-| | Who becomes a lead |
-|---|---|
-| **Strict** | Only businesses with no website at all. |
-| **Normal** (default) | Plus dead links, parked domains, and social-only pages. Someone who paid for a site that's now a 404 is a better lead than a blank listing. |
-| **Wide** | Plus sites that are http-only (browsers show "Not secure") or have no mobile layout. |
-
-A site that loads, works and is built for phones is never a lead, at any
-setting. Every lead carries its reason, shown on the Approve page.
+One bar, not three. A dead link, a parked domain or a dated site all mean the
+business *has* a website; that's a different conversation and a weaker one. A
+Facebook or Yelp page counts as no website, because it is one: there's nowhere
+of their own to send a customer, and "you haven't got a website" is true, easy
+to say and impossible to argue with.
 
 **What counts as "no website".** A business whose only link is a Facebook or
 Instagram page counts — it has nowhere of its own to send a customer, which is
