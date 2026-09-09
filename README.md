@@ -203,6 +203,12 @@ against the daily cap, how many all told, and how many are waiting for you.
 Nothing leaves without your approval, so that line is a record of your own
 decisions.
 
+**You can see whether he's running.** The Dashboard opens with a line saying
+so — a green dot and "JARVIS is working — checked in 14s ago", or a red one and
+"JARVIS has stopped", plus which version is actually running. The background
+worker writes a heartbeat every round, so a stopped app looks different from a
+working one instead of identical. If it ever says stopped, quit and reopen.
+
 **He starts on launch.** Opening the app puts him to work: check what needs
 you, crawl if there's map left, look up missing addresses.
 

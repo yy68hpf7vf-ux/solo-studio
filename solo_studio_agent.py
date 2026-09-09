@@ -401,7 +401,11 @@ def us_cities(first_state: str = "") -> list[str]:
     the biggest cities of each state before its smaller ones, so the crawl
     starts where they actually are and works outwards.
     """
-    states = sorted(US_CITIES_BY_STATE)
+    # Knowing nothing about where they are, start with the busiest states
+    # rather than alphabetically — otherwise a fresh app opens in Alaska. The
+    # length of each state's list stands in for how much trade is in it.
+    states = sorted(US_CITIES_BY_STATE,
+                    key=lambda st: (-len(US_CITIES_BY_STATE[st].split(",")), st))
     first = (first_state or "").upper()
     if first in US_CITIES_BY_STATE:
         states.remove(first)

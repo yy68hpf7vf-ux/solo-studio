@@ -212,10 +212,16 @@ class PhoneGateTest(unittest.TestCase):
             self.dash._relaunch_self = real
             self.dash.LAUNCHER_RERUNS_US = was
 
-    def test_nothing_ever_asks_the_user_to_quit_and_reopen(self):
-        """The dead end this replaced. It should not come back."""
+    def test_the_restart_button_never_asks_you_to_quit_by_hand(self):
+        """The dead end this replaced: the one button whose whole job is
+        restarting must never tell you to go and do it yourself. (Telling you
+        to reopen when the worker has actually died is different, and correct
+        — so this checks the button, not the whole app.)"""
         import inspect
-        self.assertNotIn("Quit Solo Studio", inspect.getsource(self.dash))
+        self.assertNotIn("Quit Solo Studio",
+                         inspect.getsource(self.dash.do_restart))
+        self.assertNotIn("Quit Solo Studio",
+                         inspect.getsource(self.dash._relaunch_self))
 
     # -- the backdrop, now that it stands still -----------------------------
 
@@ -367,3 +373,36 @@ if __name__ == "__main__":
                             environ_base={"REMOTE_ADDR": "127.0.0.1"}).json
         for key in ("points", "at", "of", "here", "found", "bounds", "working"):
             self.assertIn(key, d)
+
+    # -- is it actually running? ---------------------------------------------
+
+    def test_the_dashboard_says_whether_jarvis_is_working(self):
+        """The question the app could never answer about itself, which is why
+        "it isn't doing anything" went round so many times."""
+        html = self.client.get(
+            "/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).data.decode()
+        self.assertIn("JARVIS is", html)
+        self.assertIn("running", html)
+
+    def test_a_worker_that_never_ran_is_a_fault_on_the_dashboard(self):
+        self.dash.STATE.db.set_kv("worker_beat", "")
+        ids = {f["id"] for f in self.dash.current_findings()}
+        self.assertIn("worker-cold", ids)
+
+    def test_a_worker_that_stopped_is_a_fault_too(self):
+        self.dash.STATE.db.set_kv("worker_beat", "2020-01-01T00:00:00+00:00")
+        found = {f["id"]: f for f in self.dash.current_findings()}
+        self.assertIn("worker-stopped", found)
+        self.assertEqual(found["worker-stopped"]["level"], self.core.FIX)
+
+    def test_a_beating_worker_says_nothing(self):
+        self.dash.STATE.db.set_kv("worker_beat", self.core._now())
+        ids = {f["id"] for f in self.dash.current_findings()}
+        self.assertNotIn("worker-stopped", ids)
+        self.assertNotIn("worker-cold", ids)
+
+    def test_it_reports_the_version_that_is_actually_running(self):
+        """Not the one on disk — that is what made every 'did the update take'
+        question unanswerable."""
+        self.assertEqual(self.dash.worker_pulse()["running"],
+                         self.dash.RUNNING_SHA or "unknown")

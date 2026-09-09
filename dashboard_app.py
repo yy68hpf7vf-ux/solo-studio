@@ -266,6 +266,11 @@ def _autopilot_loop():
             # A stopped app can still be broken, and that is exactly when
             # nobody is looking at it.
             STATE.agent.watch()
+            # A heartbeat every round. Without one there is no way to tell a
+            # working app from a stopped one by looking at it, which is how
+            # "it isn't doing anything" stayed unanswerable for so long.
+            STATE.db.set_kv("worker_beat", core._now())
+            STATE.db.set_kv("worker_version", RUNNING_SHA or "bundled")
             # No mailbox requirement here: finding leads and looking up
             # addresses have nothing to do with email, and gating the whole
             # round on an Inkbox key is what stopped JARVIS working on his own.
@@ -368,6 +373,10 @@ body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
   margin:0 0 16px;padding:11px 15px;border-radius:var(--r-md);
   background:var(--panel-2);border:1px solid var(--line)}
 .sendbar b{font-size:19px}
+.sendbar .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;
+  margin-right:7px;background:var(--bad)}
+.sendbar .pulse.on{background:var(--ok);
+  box-shadow:0 0 0 3px rgba(110,231,183,.18)}
 
 /* ---- chrome ---- */
 header{position:sticky;top:0;z-index:40;display:flex;gap:22px;align-items:center;
@@ -657,6 +666,13 @@ get started — nothing works until then.</div>
 {% endif %}
 
 <div class="sendbar">
+  <div><span class="pulse {{ 'on' if pulse.alive }}"></span>
+    {% if pulse.alive %}<b>JARVIS is working</b> —
+      checked in {{ pulse.seconds }}s ago
+    {% elif pulse.ever %}<b style="color:var(--bad)">JARVIS has stopped</b> —
+      nothing for {{ pulse.seconds }}s
+    {% else %}<b style="color:var(--warn)">JARVIS is starting up</b>{% endif %}
+    <span class="muted">· running {{ pulse.running if pulse.running.startswith('the') else pulse.running[:7] }}</span></div>
   <div><b>{{ sent_today }}</b> cold email{{ '' if sent_today == 1 else 's' }}
     sent today{% if cap %} of {{ cap }} allowed{% endif %}</div>
   <div class="muted">{{ sent_total }} sent all told · {{ pending_count }}
@@ -2907,6 +2923,7 @@ def dashboard():
                    stage_counts=[(s, counts[s]) for s in order],
                    attention=db.attention_events(), configured=configured,
                    findings=current_findings(),
+                   pulse=worker_pulse(),
                    sent_today=db.sends_today(),
                    sent_total=db.event_counts().get("outreach_sent", 0),
                    cap=core.setting_int(cfg, "daily_send_cap", 20))
@@ -3519,6 +3536,25 @@ appear.</p>
 """
 
 
+def worker_pulse() -> dict:
+    """Is the background worker alive, and what is it running?
+
+    The one question the app could never answer about itself.
+    """
+    beat = STATE.db.get_kv("worker_beat")
+    interval = max(30, core.setting_int(STATE.config, "poll_interval_seconds", 60))
+    age = core._age_minutes(beat) * 60 if beat else None
+    return {
+        "ever": bool(beat),
+        "seconds": int(age) if age is not None else None,
+        # Three rounds missed is a stopped worker, not a slow one.
+        "alive": age is not None and age < interval * 3 + 30,
+        "version": STATE.db.get_kv("worker_version") or "",
+        "running": RUNNING_SHA or "the bundled copy",
+        "interval": interval,
+    }
+
+
 def _spend_so_far() -> dict:
     """What the app has actually spent this month, so it isn't a guess.
 
@@ -3565,6 +3601,19 @@ def current_findings() -> list[dict]:
     """What JARVIS has noticed right now, including the things only the app
     itself knows — an update sitting on disk, for one."""
     extra = []
+    pulse = worker_pulse()
+    if not pulse["ever"]:
+        extra.append(core.finding(
+            "worker-cold", core.FIX, "JARVIS hasn't started working yet",
+            "The background worker hasn't run once since this copy of the app "
+            "started. Give it a minute; if it stays this way, quit Solo Studio "
+            "and open it again.", "/updates", "Updates"))
+    elif not pulse["alive"]:
+        extra.append(core.finding(
+            "worker-stopped", core.FIX, "JARVIS has stopped working",
+            "Nothing from the background worker for %d seconds, and it should "
+            "check in every %d. Quit Solo Studio and open it again."
+            % (pulse["seconds"], pulse["interval"]), "/updates", "Updates"))
     crawl = _crawl_progress()
     if crawl and STATE.config.get("auto_search_enabled"):
         extra.append(core.finding(
