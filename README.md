@@ -122,10 +122,26 @@ Setup shows what has actually been used — lookups and Google calls both — so
 it is a number, not a guess. Set the cap to 0 to never spend Claude credit on
 addresses at all.
 
-**What else uses Claude credit.** Finding leads uses none: that is Google and
-OpenStreetMap. Beyond address lookups, credit is only spent when something real
-happens — reading a reply that arrived, designing a site for someone who asked
-for one, answering you on the Ask page. None of it runs in a loop.
+**One dial for Claude credit,** on Setup. Finding leads spends none of it at any
+setting — that part is Google and OpenStreetMap.
+
+| Setting | Address lookups | Ceiling |
+|---|---|---|
+| **Off** | none — free routes only | **$0** |
+| **Frugal** *(default)* | cheap model, 10 a day | **$1.75/month** |
+| **Normal** | best model for replies, 25 a day | **$7/month** |
+
+Everything else is bounded by something real happening: reading a reply that
+actually arrived (capped at 200 tokens, since the answer is one word),
+answering you on the Ask page, designing a site for someone who has asked for
+one. Nothing runs in a loop.
+
+Designing a site is deliberately *not* on the dial — it always uses the best
+model your account can reach. It only runs once somebody has said yes, it costs
+about a dollar, and it's the thing you're selling for $500.
+
+So on the shipped setting, the app cannot spend more than about **$1.75 a month**
+unless a sale is involved.
 
 **Finding the email.** Two ways, picked automatically. Where the business has a
 domain — a dead or parked site — **Hunter** *(optional)* looks up addresses on

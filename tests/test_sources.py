@@ -450,3 +450,94 @@ class ZeroMeansZeroTest(unittest.TestCase):
 
     def test_a_real_number_is_used(self):
         self.assertEqual(core.setting_int({"cap": "50"}, "cap", 200), 50)
+
+
+class SpendDialTest(unittest.TestCase):
+    """One dial for what the app may spend on Claude.
+
+    Asked for plainly: "I want the app to use the least amount of credits
+    possible." So the defaults have to be frugal, and the expensive things
+    have to be the ones that only run when money is coming in.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-spend-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        self.cfg = dict(core.DEFAULT_CONFIG, anthropic_api_key="k")
+        self.agent = core.Agent(core.Database(), core.Services(self.cfg),
+                                self.cfg)
+        self.used = []
+        self.agent.services.scrape_email = lambda url: ("", "")
+        self.agent.services.research_email = lambda lead: (
+            self.used.append(1), {"found": False})[1]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def test_it_ships_frugal(self):
+        self.assertEqual(core.DEFAULT_CONFIG["spend_level"], "frugal")
+
+    def test_off_never_spends_a_penny_on_lookups(self):
+        self.cfg["spend_level"] = "off"
+        for _ in range(5):
+            self.agent._find_email({"id": 1, "social_url": None})
+        self.assertEqual(self.used, [])
+
+    def test_frugal_stops_at_a_handful_a_day(self):
+        self.cfg["spend_level"] = "frugal"
+        for _ in range(40):
+            self.agent._find_email({"id": 1, "social_url": None})
+        self.assertEqual(len(self.used),
+                         core.SPEND_LEVELS["frugal"]["lookups_day"])
+
+    def test_a_day_cap_exists_or_a_month_goes_in_an_hour(self):
+        """The researcher runs every tick and there are 1,440 in a day."""
+        for level in core.SPEND_LEVELS.values():
+            with self.subTest(level=level["label"][:12]):
+                self.assertLessEqual(level["lookups_day"],
+                                     level["lookups_month"])
+
+    def test_the_monthly_cap_still_wins(self):
+        self.cfg.update(spend_level="normal", monthly_lookup_cap=2)
+        for _ in range(6):
+            self.agent._find_email({"id": 1, "social_url": None})
+        self.assertEqual(len(self.used), 2)
+
+    def test_every_level_has_a_ceiling_worth_knowing(self):
+        for name, level in core.SPEND_LEVELS.items():
+            with self.subTest(level=name):
+                ceiling = level["lookups_month"] * core.LOOKUP_DOLLARS
+                self.assertLess(ceiling, 10, "no level may be a surprise bill")
+
+    # -- which model does what ----------------------------------------------
+
+    def test_frugal_reads_replies_with_the_cheap_model(self):
+        self.cfg["spend_level"] = "frugal"
+        self.assertTrue(core.thinking_model(self.cfg).startswith("claude-haiku"))
+
+    def test_normal_reads_replies_with_the_good_one(self):
+        self.cfg["spend_level"] = "normal"
+        self.assertEqual(core.thinking_model(self.cfg), core.MAIN_MODEL)
+
+    def test_designing_a_site_is_never_downgraded(self):
+        """It only runs once somebody has asked for one, and it is the thing
+        being sold."""
+        import inspect
+        src = inspect.getsource(core.Services.generate_site_html)
+        self.assertIn("anthropic_model", src)
+        self.assertNotIn("thinking_model", src)
+
+    def test_the_town_lookup_no_longer_pays_for_web_search(self):
+        """Four searches on the big model to name towns a model already knows,
+        each of which gets checked against the map anyway."""
+        import inspect
+        src = inspect.getsource(core.Services.towns_near)
+        self.assertNotIn("web_search", src)
+        self.assertIn("RESEARCH_MODEL", src)
+
+    def test_reading_a_reply_cannot_run_away(self):
+        """One word of output, so it is bounded — thinking included."""
+        import inspect
+        src = inspect.getsource(core.Services.classify_reply)
+        self.assertIn("max_tokens=200", src)

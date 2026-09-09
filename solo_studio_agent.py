@@ -236,6 +236,45 @@ GOOGLE_CALL_CAP = 4500
 # Opus is a fifth the token price, and this is an extraction job, not a
 # reasoning one.
 RESEARCH_MODEL = "claude-haiku-4-5"
+MAIN_MODEL = "claude-opus-5"
+
+# One dial for what the app is allowed to spend on Claude. Finding leads never
+# touches it — that is Google and OpenStreetMap — so this is about looking up
+# addresses, reading replies, and answering you.
+#
+# Designing a site is not on the dial at any level: it only runs when somebody
+# has asked for one, it is the thing being sold, and it should be the best the
+# account can do.
+SPEND_LEVELS = {
+    "off":    {"lookups_month": 0,   "lookups_day": 0,  "small_model": True,
+               "label": "Off — no Claude credit spent on lookups at all"},
+    "frugal": {"lookups_month": 50,  "lookups_day": 10, "small_model": True,
+               "label": "Frugal — cheap model, a few paid lookups a day"},
+    "normal": {"lookups_month": 200, "lookups_day": 25, "small_model": False,
+               "label": "Normal — best model for replies, more lookups"},
+}
+DEFAULT_SPEND = "frugal"
+# Two web searches at $10/1,000 plus a small model's tokens on what comes back.
+LOOKUP_DOLLARS = 0.035
+
+
+def spend_plan(cfg: dict) -> dict:
+    """What this app may spend, and on which model."""
+    plan = dict(SPEND_LEVELS.get(cfg.get("spend_level") or DEFAULT_SPEND,
+                                 SPEND_LEVELS[DEFAULT_SPEND]))
+    # An explicit cap still wins — the dial sets it, it doesn't lock it.
+    if cfg.get("monthly_lookup_cap") not in (None, ""):
+        plan["lookups_month"] = max(0, setting_int(cfg, "monthly_lookup_cap",
+                                                   plan["lookups_month"]))
+    return plan
+
+
+def thinking_model(cfg: dict) -> str:
+    """The model for work that is judgement, not extraction: reading a reply,
+    answering a question. Small when the dial says to be frugal."""
+    if spend_plan(cfg)["small_model"]:
+        return (cfg.get("research_model") or "").strip() or RESEARCH_MODEL
+    return (cfg.get("anthropic_model") or "").strip() or MAIN_MODEL
 LOOKUP_CAP = 200          # paid lookups a month, before it stops spending
 
 
@@ -268,6 +307,10 @@ def setting_int(cfg: dict, key: str, default: int) -> int:
 
 def _lookup_meter_key() -> str:
     return "paid_lookups_" + datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def _lookup_day_key() -> str:
+    return "paid_lookups_" + datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def _google_meter_key() -> str:
@@ -512,7 +555,9 @@ DEFAULT_CONFIG = {
     "hunt_interval_hours": 6,         # for the older top-up hunt
     "monthly_google_cap": GOOGLE_CALL_CAP,
     "research_model": RESEARCH_MODEL,   # extraction, not reasoning
-    "monthly_lookup_cap": LOOKUP_CAP,   # paid address lookups a month
+    "spend_level": DEFAULT_SPEND,       # off | frugal | normal
+    "monthly_lookup_cap": None,         # blank means "whatever the dial says"
+    "daily_lookup_cap": None,
     "lookup_searches": 2,               # web searches per paid lookup
     "saved_searches": "",         # one search per line
     "search_interval_hours": 12,
@@ -2002,6 +2047,9 @@ class Services:
             details.append(f"Address: {lead['address']}")
         if lead.get("phone"):
             details.append(f"Phone: {lead['phone']}")
+        # Deliberately the best model available, whatever the spending dial
+        # says: this only runs once somebody has asked for a site, it is the
+        # thing being sold, and it is the one place quality is worth paying for.
         prompt = (
             "Design a beautiful, modern, single-page website for this local business:\n\n"
             + "\n".join(details) + "\n\n"
@@ -2034,9 +2082,14 @@ class Services:
 
     def classify_reply(self, lead: dict, stage: str, body: str) -> str:
         """Classify an inbound reply. Returns one of:
-        interested | declined | unsubscribe | unclear."""
+        interested | declined | unsubscribe | unclear.
+
+        The prompt is deliberately conservative — anything ambiguous comes back
+        as "unclear" for a person to read — which is what makes the small model
+        safe here when the dial asks for it.
+        """
         client = self._get_anthropic()
-        model = self.config.get("anthropic_model") or "claude-opus-5"
+        model = thinking_model(self.config)
         context = {
             STAGE_CONTACTED: "We cold-emailed them offering to design a free website preview.",
             STAGE_PREVIEW_SENT: "We sent them a link to a free preview of their website.",
@@ -2055,8 +2108,9 @@ class Services:
             f"--- REPLY ---\n{body[:4000]}\n--- END ---"
         )
         response = client.messages.create(
-            model=model, max_tokens=2000,
-            output_config={"effort": "low"},
+            model=model, max_tokens=200,   # the answer is one word
+            **({} if model.startswith("claude-haiku")
+               else {"output_config": {"effort": "low"}}),
             messages=[{"role": "user", "content": prompt}],
         )
         if response.stop_reason == "refusal":
@@ -2138,15 +2192,19 @@ you do not know instead of inventing a lead, a figure, or a setting."""
         Advisory only: no tools are wired up, so this cannot act on anything.
         """
         client = self._get_anthropic()
-        model = self.config.get("anthropic_model") or "claude-opus-5"
+        # Stays on the best model whatever the dial says: you ask this a
+        # handful of times a month, deliberately, and a worse answer to "what
+        # should I do next" is not worth the fraction of a penny saved.
+        model = (self.config.get("anthropic_model") or "").strip() or MAIN_MODEL
         messages = [{"role": m["role"], "content": m["content"]}
                     for m in history if m.get("content")]
         if not messages:
             raise ServiceError("Nothing to answer.")
         with client.messages.stream(
             model=model,
-            max_tokens=8000,
-            output_config={"effort": "medium"},
+            max_tokens=2000,
+            **({} if model.startswith("claude-haiku")
+               else {"output_config": {"effort": "low"}}),
             system=[{"type": "text",
                      "text": self.ASSISTANT_BRIEF,
                      "cache_control": {"type": "ephemeral"}},
@@ -2168,7 +2226,11 @@ you do not know instead of inventing a lead, a figure, or a setting."""
         automatic search ends up never being switched on.
         """
         client = self._get_anthropic()
-        model = self.config.get("anthropic_model") or "claude-opus-5"
+        # No web search here, and the small model. A model already knows what
+        # towns are near a city, every answer is checked against the map before
+        # it is used, and a wrong one costs a geocode rather than a bad lead.
+        # This used to be four web searches on the big model.
+        model = (self.config.get("research_model") or "").strip() or RESEARCH_MODEL
         prompt = (
             f"List the towns, villages and hamlets within about {miles} miles "
             f"of {base}.\n\n"
@@ -2188,10 +2250,7 @@ you do not know instead of inventing a lead, a figure, or a setting."""
             "numbering, no commentary, no blank lines."
         )
         response = client.messages.create(
-            model=model, max_tokens=4000,
-            output_config={"effort": "low"},
-            tools=[{"type": "web_search_20260209", "name": "web_search",
-                    "max_uses": 4}],
+            model=model, max_tokens=1200,
             messages=[{"role": "user", "content": prompt}],
         )
         if response.stop_reason == "refusal":
@@ -3507,18 +3566,36 @@ class Agent:
                 self.db.log(lead.get("id"), "hunter_failed", explain(e, 200))
 
         # 3. The one that costs real money. Budgeted, and last.
-        cap = max(0, setting_int(self.config, "monthly_lookup_cap", LOOKUP_CAP))
+        plan = spend_plan(self.config)
+        month_cap = plan["lookups_month"]
         used = self.paid_lookups_this_month()
-        if used >= cap:
+        if used >= month_cap:
             return {"found": False,
                     "note": "Paid lookups for this month are used up (%d of %d) "
-                            "— free ones carry on." % (used, cap)}
+                            "— free ones carry on." % (used, month_cap)}
+        # A daily cap as well, or a month's budget goes in the first hour: the
+        # researcher runs every tick, and there are 1,440 of those in a day.
+        day_cap = setting_int(self.config, "daily_lookup_cap", 0) \
+            or plan["lookups_day"]
+        today = self.paid_lookups_today()
+        if day_cap and today >= day_cap:
+            return {"found": False,
+                    "note": "That's today's %d paid lookups — it picks up "
+                            "again tomorrow, and the free ones carry on."
+                            % day_cap}
         self.db.bump_kv(_lookup_meter_key())
+        self.db.bump_kv(_lookup_day_key())
         return self.services.research_email(lead)
 
     def paid_lookups_this_month(self) -> int:
         try:
             return int(self.db.get_kv(_lookup_meter_key()) or 0)
+        except ValueError:
+            return 0
+
+    def paid_lookups_today(self) -> int:
+        try:
+            return int(self.db.get_kv(_lookup_day_key()) or 0)
         except ValueError:
             return 0
 

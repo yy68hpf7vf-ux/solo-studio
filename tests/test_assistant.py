@@ -111,6 +111,8 @@ class AssistantTest(unittest.TestCase):
         self.dash.STATE.services.assistant_reply(
             [{"role": "user", "content": "hi"}], "SNAPSHOT-MARKER")
         call = fake.calls[0]
+        # The Ask box stays on the good model even under the frugal dial: you
+        # use it a handful of times a month and by hand.
         self.assertEqual(call["model"], "claude-opus-5")
         joined = " ".join(part["text"] for part in call["system"])
         self.assertIn("SNAPSHOT-MARKER", joined)

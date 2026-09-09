@@ -988,6 +988,20 @@ address. It only ever suggests — you accept or reject each one.</p>
   {{ cost.days_for_full_sweep }} day{{ '' if cost.days_for_full_sweep == 1
   else 's' }}.{% endif %}</p>
 </div>
+<label>How much Claude credit to spend</label>
+<select name="spend_level">
+  <option value="off" {% if config.spend_level == 'off' %}selected{% endif %}>
+    Off — never spend credit looking up addresses</option>
+  <option value="frugal" {% if config.spend_level in (None, '', 'frugal') %}selected{% endif %}>
+    Frugal — cheap model, a few paid lookups a day (about $1.75/month)</option>
+  <option value="normal" {% if config.spend_level == 'normal' %}selected{% endif %}>
+    Normal — best model for reading replies, more lookups (about $7/month)</option>
+</select>
+<p class="muted">Finding leads never spends Claude credit at any setting — that
+part is Google and OpenStreetMap. Designing a site isn't on this dial either:
+it only runs once somebody has asked for one, and it always uses the best model
+your account can reach, because it's the thing you're selling.</p>
+
 <div class="note info" style="margin-top:10px">
   <div class="k">What Claude will charge you</div>
   <p class="muted" style="margin:5px 0 0">
@@ -995,18 +1009,14 @@ address. It only ever suggests — you accept or reject each one.</p>
   OpenStreetMap. Credit goes on <b>looking up email addresses</b>, and only
   after the free routes fail. Used this month:
   <b>{{ spend.lookups }} of {{ spend.lookup_cap }}</b> paid lookups
-  (about ${{ spend.lookup_dollars }}), on {{ spend.model }}. It stops there;
-  the free ones carry on.</p>
+  (about ${{ spend.lookup_dollars }}), on {{ spend.model }} —
+  {{ spend.today }} of today's {{ spend.lookup_day_cap }}. It stops there; the
+  free ones carry on. Most this setting can cost you in a month:
+  <b>${{ spend.ceiling }}</b>.</p>
   <p class="muted" style="margin:6px 0 0">Google searches used this month:
   <b>{{ spend.google }} of {{ spend.google_cap }}</b> — the first 5,000 are
   free.</p>
 </div>
-<label>Paid address lookups a month</label>
-<input type="number" name="monthly_lookup_cap" min="0" max="5000"
-  value="{{ config.monthly_lookup_cap if config.monthly_lookup_cap is not none else 200 }}">
-<p class="muted">Set it to 0 to never spend Claude credit on addresses at all —
-the free ones (OpenStreetMap, reading their page) keep working.</p>
-
 <label>Max cold emails per day</label>
 <input type="number" name="daily_send_cap" min="1" max="200"
   value="{{ config.daily_send_cap }}">
@@ -3490,14 +3500,19 @@ def _spend_so_far() -> dict:
     """
     try:
         lookups = STATE.agent.paid_lookups_this_month()
+        today = STATE.agent.paid_lookups_today()
         google = STATE.agent.google_calls_this_month()
     except Exception:
-        lookups = google = 0
+        lookups = today = google = 0
     cfg = STATE.config
+    plan = core.spend_plan(cfg)
     return {
         "lookups": lookups,
-        "lookup_cap": core.setting_int(cfg, "monthly_lookup_cap", core.LOOKUP_CAP),
-        "lookup_dollars": f"{lookups * 0.035:.2f}",
+        "lookup_cap": plan["lookups_month"],
+        "lookup_day_cap": plan["lookups_day"],
+        "today": today,
+        "ceiling": f"{plan['lookups_month'] * core.LOOKUP_DOLLARS:.2f}",
+        "lookup_dollars": f"{lookups * core.LOOKUP_DOLLARS:.2f}",
         "model": (cfg.get("research_model") or core.RESEARCH_MODEL),
         "google": google,
         "google_cap": core.setting_int(cfg, "monthly_google_cap",
@@ -4179,6 +4194,11 @@ def setup():
         quality = request.form.get("lead_quality", "")
         if quality in core.QUALITY_LEVELS:
             cfg["lead_quality"] = quality
+        level = request.form.get("spend_level", "")
+        if level in core.SPEND_LEVELS:
+            cfg["spend_level"] = level
+            cfg["monthly_lookup_cap"] = None    # let the dial decide again
+            cfg["daily_lookup_cap"] = None
         if "saved_searches" in request.form:
             cfg["saved_searches"] = request.form.get("saved_searches", "")
         for field, lo, hi in (("monthly_lookup_cap", 0, 5000),
