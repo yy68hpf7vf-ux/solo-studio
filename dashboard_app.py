@@ -44,7 +44,13 @@ class State:
 
     def reload(self):
         self.config = core.load_config()
-        self.db = getattr(self, "db", None) or core.Database()
+        # Keep the open database handle across a reload — worker threads hold
+        # connections to it — but only while it is still the right file. If the
+        # data directory has moved underneath us, holding on would quietly go
+        # on reading and writing the old one.
+        db = getattr(self, "db", None)
+        wanted = os.path.join(core.app_data_dir(), "solo_studio.db")
+        self.db = db if db is not None and db.path == wanted else core.Database()
         self.services = core.Services(self.config)
         self.agent = core.Agent(self.db, self.services, self.config)
 
@@ -434,6 +440,11 @@ tbody tr:hover{background:rgba(190,170,255,.03)}
 .btn-danger:hover{border-color:rgba(255,122,94,.5);background:rgba(255,122,94,.12);
   color:#ffb9a6}
 .btn-sm{padding:4px 10px;font-size:12px}
+/* A button that cannot do anything has to look like it. Hover it for the
+   reason — every disabled button here carries one in its title. */
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn:disabled:hover{border-color:var(--line);color:var(--ink);
+  background:var(--panel)}
 form.inline{display:inline}
 input[type=text],input[type=password],input[type=number],textarea,select{
   width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);
@@ -3011,11 +3022,44 @@ by themselves.</p></div>
 {% if needs_email and have != 'yes' %}
 <div class="card">
 <h2>Need an email address ({{ needs_email|length }})</h2>
-<p class="muted">Google doesn't publish business emails. The Researcher hunts
-for them online — accept what it finds, or look one up yourself (Facebook, Yelp,
-a quick call) and paste it in.</p>
+{% if outlook.no_trace %}
+<div class="note warn" style="margin-bottom:12px">
+  <div class="k">{{ outlook.no_trace }} of these have nothing to read</div>
+  <p class="muted" style="margin:5px 0 0">They have no website and no page
+  anywhere — which is exactly why they're good leads, and also why there's no
+  free way to find an email for them. Looking one up costs about
+  {{ '%.1f'|format(0.035 * 100) }}¢ each
+  ({{ '$%.2f'|format(outlook.cost_all) }} for all {{ outlook.waiting }}).
+  {% if outlook.broke %}<b>Claude has no API credit right now</b>, so no lookup
+  can run at all until you add some — <a href="/setup">the Setup page</a> says
+  where.{% else %}You have <b>{{ outlook.paid_left }}</b> paid lookups left this
+  month.{% endif %}</p>
+  <p class="muted" style="margin:6px 0 0"><b>{{ outlook.callable }} of them
+  have a phone number.</b> That's free, it's already waiting, and for a
+  business with no website it's the better opening anyway.</p>
+  <a class="btn btn-primary" href="{{ url_for('calls_page') }}"
+     style="margin-top:8px">Call them instead ({{ outlook.callable }})</a>
+</div>
+{% endif %}
+<p class="muted">{% if outlook.readable %}{{ outlook.readable }} of these link
+to a page JARVIS can read for free — he does that on his own.{% endif %}
+You can always paste an address in yourself.</p>
 <form method="post" action="{{ url_for('run_research') }}" style="margin-bottom:12px">
-  <button class="btn">🕵️ Send the Researcher after these</button></form>
+  {%- set batch = [outlook.paid_left, outlook.waiting]|min %}
+  {%- if batch %}
+  <button class="btn">🕵️ Look up {{ batch }} of them now ({{ '$%.2f'|format(batch * 0.035) }})</button>
+  {%- elif outlook.readable %}
+  <button class="btn">📖 Read the {{ outlook.readable }} free ones now ($0.00)</button>
+  {%- elif outlook.broke %}
+  <button class="btn" disabled
+    title="Claude has no API credit, so a lookup would only fail"
+    >🕵️ Look up 0 of them now ($0.00)</button>
+  {%- else %}
+  <button class="btn" disabled
+    title="No paid lookups left this month and nothing free to read"
+    >🕵️ Look up 0 of them now ($0.00)</button>
+  {%- endif %}
+</form>
 <div class="tablewrap"><table class="stack"><tbody>
 {% for l in needs_email %}
 <tr>
@@ -3083,7 +3127,7 @@ def approve_queue():
     return _render(APPROVE_PAGE, queue=queue,
                    needs_email=[] if have == "yes" else unemailed,
                    cap=cap, sent_today=sent_today, remaining=remaining,
-                   have=have, counts=counts,
+                   have=have, counts=counts, outlook=STATE.agent.email_outlook(),
                    reasons=core.SITE_REASON, filter_url=filter_url,
                    totals={"all": len(ready) + len(unemailed),
                            "ready": len(ready), "needs": len(unemailed)})
@@ -3477,11 +3521,22 @@ def run_research():
     batch of them. It runs in the background; the page says so and comes back
     on its own."""
     def work():
-        r = STATE.agent.research_missing_emails(force=True, limit=10)
-        return ("Looked up %d business%s and found %d email address%s."
+        # Everything the month's budget still allows, in one go — the point of
+        # pressing it is to clear the backlog, not to nibble at it. A budget
+        # of nothing means nothing paid: the free pass still runs, and the
+        # answer says plainly that the paid one didn't.
+        outlook = STATE.agent.email_outlook()
+        budget = min(outlook["paid_left"], outlook["waiting"])
+        r = STATE.agent.research_missing_emails(force=True, limit=budget)
+        found = r.get("found", 0)
+        said = ("Looked up %d business%s and found %d email address%s."
                 % (r.get("researched", 0),
                    "" if r.get("researched") == 1 else "es",
-                   r.get("found", 0), "" if r.get("found") == 1 else "es"))
+                   found, "" if found == 1 else "es"))
+        if not budget:
+            said += (" Paid lookups are used up for this month, so only the "
+                     "free pass ran. Their phone numbers are on the Calls tab.")
+        return said
 
     if _start_job("research", "looking up email addresses", work):
         flash("JARVIS is looking up their email addresses now. It takes a "

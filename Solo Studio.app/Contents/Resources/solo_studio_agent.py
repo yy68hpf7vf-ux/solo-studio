@@ -1026,6 +1026,22 @@ class ServiceError(RuntimeError):
     """A service call failed in a way worth showing the user."""
 
 
+# The signature of an Anthropic account with no API credit, as it lands in the
+# event log. One definition, because two places have to agree about it: the
+# checkup that raises it, and every button that would otherwise promise work
+# Claude is going to refuse.
+NO_CREDIT_SIGNS = ("$0 of API credit", "credit balance is too low")
+
+
+def out_of_credit(db, look_back: int = 40) -> bool:
+    """Has a recent call failed for want of Anthropic credit?"""
+    try:
+        recent = " ".join((e["detail"] or "") for e in db.recent_events(look_back))
+    except Exception:
+        return False
+    return any(sign in recent for sign in NO_CREDIT_SIGNS)
+
+
 # The failures that actually happen, and what to do about each one. Services
 # report these as JSON a paragraph long; what the user needs is one sentence
 # and the button to press. Matched against the error text, first hit wins.
@@ -1559,8 +1575,7 @@ def checkup(db, cfg, key_fields=API_KEYS, extra=(),
             worst + ". Each one is on the Activity page with what happened.",
             "/activity", "See what"))
 
-    recent = " ".join((e["detail"] or "") for e in db.recent_events(40))
-    if "$0 of API credit" in recent or "credit balance is too low" in recent:
+    if out_of_credit(db):
         out.append(finding(
             "credit-empty", FIX, "Claude has no API credit",
             "Every step that writes or designs anything is failing. Add credit "
@@ -3663,6 +3678,35 @@ class Agent:
                          "The Researcher turned up contact addresses — check "
                          "them on the Approve page.", tags="mag")
         return {"ok": True, "researched": len(leads), "found": found}
+
+    def email_outlook(self) -> dict:
+        """Where the leads waiting for an address could actually get one.
+
+        Worth being exact about, because the honest answer for a business with
+        no website is often "nowhere free". Saying "the Researcher hunts for
+        them online" when it cannot is how a queue sits at zero and looks
+        broken.
+        """
+        waiting = self.db.leads_needing_email()
+        readable = sum(1 for l in waiting if (l["social_url"] or "").strip())
+        callable_now = sum(1 for l in waiting if (l["phone"] or "").strip())
+        plan = spend_plan(self.config)
+        left = max(0, plan["lookups_month"] - self.paid_lookups_this_month())
+        # A budget Claude will refuse to spend is not a budget. Without credit
+        # every paid lookup comes back as an error, so the honest number of
+        # lookups available is zero and the screen has to say which wall it is.
+        broke = out_of_credit(self.db)
+        return {
+            "waiting": len(waiting),
+            "readable": readable,                 # has a page to read for free
+            "no_trace": len(waiting) - readable,  # nothing online to read
+            "callable": callable_now,
+            "paid_left": 0 if broke else left,
+            "broke": broke,
+            "budget_left": left,
+            "cost_all": len(waiting) * LOOKUP_DOLLARS,
+            "has_key": bool((self.config.get("anthropic_api_key") or "").strip()),
+        }
 
     def _free_email_pass(self, leads) -> int:
         """Read addresses off the pages these leads already link to.

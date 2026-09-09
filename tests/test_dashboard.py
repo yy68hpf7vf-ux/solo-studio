@@ -406,3 +406,44 @@ if __name__ == "__main__":
         question unanswerable."""
         self.assertEqual(self.dash.worker_pulse()["running"],
                          self.dash.RUNNING_SHA or "unknown")
+
+
+class ReloadFollowsTheDataDirectoryTest(unittest.TestCase):
+    """A reload kept whatever database handle it already had. In the app that
+    is right — worker threads hold connections to it — but it meant that if the
+    data directory ever moved, every read and write went on hitting the old
+    file while the page reported the new one."""
+
+    def setUp(self):
+        self.a = tempfile.mkdtemp(prefix="solo-studio-home-a-")
+        self.b = tempfile.mkdtemp(prefix="solo-studio-home-b-")
+        self.old = os.environ.get("SOLO_STUDIO_HOME")
+        import dashboard_app as dash
+        self.dash = dash
+
+    def tearDown(self):
+        if self.old is None:
+            os.environ.pop("SOLO_STUDIO_HOME", None)
+        else:
+            os.environ["SOLO_STUDIO_HOME"] = self.old
+        self.dash.STATE.reload()
+        shutil.rmtree(self.a, ignore_errors=True)
+        shutil.rmtree(self.b, ignore_errors=True)
+
+    def test_moving_home_opens_the_database_that_is_actually_there(self):
+        os.environ["SOLO_STUDIO_HOME"] = self.a
+        self.dash.STATE.reload()
+        self.assertTrue(self.dash.STATE.db.path.startswith(self.a))
+
+        os.environ["SOLO_STUDIO_HOME"] = self.b
+        self.dash.STATE.reload()
+        self.assertTrue(self.dash.STATE.db.path.startswith(self.b))
+
+    def test_a_reload_that_changes_nothing_keeps_the_open_handle(self):
+        """Threads are already holding it; swapping it for no reason would
+        drop their connections."""
+        os.environ["SOLO_STUDIO_HOME"] = self.a
+        self.dash.STATE.reload()
+        first = self.dash.STATE.db
+        self.dash.STATE.reload()
+        self.assertIs(self.dash.STATE.db, first)

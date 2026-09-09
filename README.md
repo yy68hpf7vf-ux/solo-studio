@@ -153,6 +153,22 @@ one (reading the page a lead already links to) now runs for the whole batch at
 once instead of a few a minute. A business with no page and no phone-book entry
 stays on Calls, which is what Calls is for.
 
+**Why Approve can sit at zero while Calls runs into the hundreds — and what the
+page now says about it.** The whole point of a lead here is that they have *no
+website*. That is also why they often have no email anywhere: no site to read,
+no domain for Hunter, and an OpenStreetMap entry that usually doesn't carry one.
+For those, the only route left is a paid web-search lookup at about 3.5¢, and if
+Claude has no credit there is no route at all.
+
+The Approve page used to say "the Researcher hunts for them online" over a queue
+that was never going to move. It now says the true thing instead: how many of
+them have nothing to read, what a lookup would cost, how many are actually
+available to run — and, when the answer is none, *which* wall it hit, the
+monthly cap or an empty Anthropic balance. The button goes grey rather than
+promising a lookup that would only fail, and the primary action becomes **Call
+them instead**, with the count, because the phone number is already there and
+free. For a business with no website that was always the better opening.
+
 **Finding the email.** Two ways, picked automatically. Where the business has a
 domain — a dead or parked site — **Hunter** *(optional)* looks up addresses on
 it, which beats guessing. Where there is no website at all there is no domain

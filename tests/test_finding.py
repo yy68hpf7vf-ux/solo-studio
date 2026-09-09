@@ -432,3 +432,123 @@ class NotABusinessTest(unittest.TestCase):
         import inspect
         src = inspect.getsource(self.core.Services._triage)
         self.assertIn("is_a_business", src)
+
+
+class HonestAboutEmailsTest(unittest.TestCase):
+    """A queue sitting at zero with "the Researcher hunts for them online"
+    above it is the app lying. For a business with no website there is often
+    nowhere free to look, and the screen has to say so."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="solo-studio-honest-")
+        os.environ["SOLO_STUDIO_HOME"] = self.tmp
+        import dashboard_app as dash
+        import solo_studio_agent as core
+        self.dash, self.core = dash, core
+        dash.STATE.reload()
+        db = dash.STATE.db
+        for i in range(5):          # no website, no page, but a phone
+            db.add_lead(place_id=f"n{i}", name=f"Fred's Electrical {i}",
+                        address="a", phone="516-524-750%d" % i,
+                        category="Electrician", site_status="none")
+        for i in range(2):          # a page that can be read for free
+            db.add_lead(place_id=f"s{i}", name=f"Social Co {i}", address="a",
+                        phone="516-000-000%d" % i, category="Plumber",
+                        social_url=f"https://facebook.com/soc{i}",
+                        site_status="social")
+        self.client = dash.app.test_client()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        os.environ.pop("SOLO_STUDIO_HOME", None)
+
+    def test_it_counts_the_ones_with_nothing_to_read(self):
+        out = self.dash.STATE.agent.email_outlook()
+        self.assertEqual(out["no_trace"], 5)
+        self.assertEqual(out["readable"], 2)
+
+    def test_the_page_says_so_instead_of_promising_a_search(self):
+        html = self.client.get("/approve",
+                               environ_base={"REMOTE_ADDR": "127.0.0.1"}
+                               ).data.decode()
+        self.assertIn("nothing to read", html)
+        self.assertNotIn("The Researcher hunts for them online", html)
+
+    def test_it_points_at_the_phone_which_is_free_and_already_there(self):
+        html = self.client.get("/approve",
+                               environ_base={"REMOTE_ADDR": "127.0.0.1"}
+                               ).data.decode()
+        self.assertIn("Call them instead", html)
+        self.assertIn("/calls", html)
+
+    def test_it_says_what_a_lookup_would_cost_before_you_press_it(self):
+        html = self.client.get("/approve",
+                               environ_base={"REMOTE_ADDR": "127.0.0.1"}
+                               ).data.decode()
+        self.assertIn("Look up", html)
+        self.assertRegex(html, r"Look up \d+ of them now\s*\(\$\d+\.\d\d\)")
+
+    def test_every_one_of_them_can_still_be_reached_by_phone(self):
+        out = self.dash.STATE.agent.email_outlook()
+        self.assertEqual(out["callable"], out["waiting"])
+
+    def _broke(self):
+        """No paid lookups left — which is the state the user is actually in."""
+        cfg = self.core.load_config()
+        cfg["spend_level"] = "off"
+        self.core.save_config(cfg)
+        self.dash.STATE.reload()
+        return self.client.get("/approve",
+                               environ_base={"REMOTE_ADDR": "127.0.0.1"}
+                               ).data.decode()
+
+    def test_with_no_budget_left_it_offers_the_free_read_not_a_paid_one(self):
+        html = self._broke()
+        self.assertIn("Read the 2 free ones now ($0.00)", html)
+        self.assertNotIn("Look up 0 of them now", html)
+
+    def test_with_no_budget_and_nothing_free_the_button_is_dead_and_says_why(self):
+        with self.dash.STATE.db._conn() as c:
+            c.execute("UPDATE leads SET social_url = NULL")
+        html = self._broke()
+        self.assertIn("disabled", html)
+        self.assertIn("No paid lookups left this month", html)
+
+    def _no_credit(self):
+        """The wall the user is actually against: the app's own budget is
+        untouched, but Claude refuses every call."""
+        self.dash.STATE.db.log(None, "research_failed",
+                               "This Anthropic account has $0 of API credit")
+        return self.client.get("/approve",
+                               environ_base={"REMOTE_ADDR": "127.0.0.1"}
+                               ).data.decode()
+
+    def test_no_claude_credit_is_named_as_the_reason_not_the_monthly_cap(self):
+        html = self._no_credit()
+        self.assertIn("no API credit", html)
+        self.assertNotIn("paid lookups left this month", html)
+
+    def test_no_claude_credit_means_the_paid_button_is_not_offered(self):
+        """Offering to buy 50 lookups from an account that will refuse all 50
+        is the promise that made the queue look broken."""
+        out = self.dash.STATE.agent.email_outlook()
+        self.assertGreater(out["paid_left"], 0)      # budget says yes
+        html = self._no_credit()
+        after = self.dash.STATE.agent.email_outlook()
+        self.assertTrue(after["broke"])
+        self.assertEqual(after["paid_left"], 0)      # reality says no
+        self.assertGreater(after["budget_left"], 0)  # and why they differ
+        self.assertNotIn("Look up 7 of them now", html)
+
+    def test_a_spent_budget_never_spends_one_more(self):
+        """min(paid_left, waiting) was floored at 1, so the button that said
+        it could do nothing would still buy a lookup."""
+        cfg = self.core.load_config()
+        cfg["spend_level"] = "off"
+        self.core.save_config(cfg)
+        self.dash.STATE.reload()
+        with mock.patch.object(self.core.Agent, "_find_email") as paid:
+            self.dash.STATE.agent.research_missing_emails(
+                force=True,
+                limit=min(self.dash.STATE.agent.email_outlook()["paid_left"], 99))
+        paid.assert_not_called()
